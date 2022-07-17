@@ -13,6 +13,25 @@
 
 -- COMMAND ----------
 
+-- MAGIC %python
+-- MAGIC from include.deltahelpers import DeltaHelpers
+
+-- COMMAND ----------
+
+-- MAGIC %python 
+-- MAGIC 
+-- MAGIC deltaHelpers = DeltaHelpers() ## no configs creates a default temp db
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC 
+-- MAGIC df = spark.read.format("json").load("/databricks-datasets/iot-stream/data-device/")
+-- MAGIC 
+-- MAGIC display(df)
+
+-- COMMAND ----------
+
 DROP DATABASE IF EXISTS iot_dashboard CASCADE;
 CREATE DATABASE IF NOT EXISTS iot_dashboard;
 USE iot_dashboard;
