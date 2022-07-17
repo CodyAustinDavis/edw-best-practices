@@ -13,25 +13,6 @@
 
 -- COMMAND ----------
 
--- MAGIC %python
--- MAGIC from include.deltahelpers import DeltaHelpers
-
--- COMMAND ----------
-
--- MAGIC %python 
--- MAGIC 
--- MAGIC deltaHelpers = DeltaHelpers() ## no configs creates a default temp db
-
--- COMMAND ----------
-
--- MAGIC %python
--- MAGIC 
--- MAGIC df = spark.read.format("json").load("/databricks-datasets/iot-stream/data-device/")
--- MAGIC 
--- MAGIC display(df)
-
--- COMMAND ----------
-
 DROP DATABASE IF EXISTS iot_dashboard CASCADE;
 CREATE DATABASE IF NOT EXISTS iot_dashboard;
 USE iot_dashboard;
@@ -121,6 +102,7 @@ TBLPROPERTIES("delta.targetFileSize"="128mb") -- if update heavy, file sizes are
 -- COMMAND ----------
 
 -- DBTITLE 1,Perform Upserts - Device Data
+
 MERGE INTO iot_dashboard.silver_sensors AS target
 USING (SELECT Id::integer,
               device_id::integer,

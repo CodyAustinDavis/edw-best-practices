@@ -4,7 +4,7 @@ from pyspark.sql.functions import col, count, lit
 class DeltaHelpers():
 
     
-    def __init__(self, temp_root_path="dbfs://delta_helpers_temp_db", db_name="helpers_temp"):
+    def __init__(self, temp_root_path="dbfs:/delta_temp_db", db_name="delta_temp"):
         
         self.spark = SparkSession.getActiveSession()
         self.db_name = db_name
@@ -25,13 +25,13 @@ class DeltaHelpers():
         self.session_id =self.dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
         self.temp_env = self.temp_root_path + self.session_id
         self.spark.sql(f"""DROP DATABASE IF EXISTS {self.db_name} CASCADE;""")
-        self.spark.sql(f"""CREATE DATABASE IF NOT EXISTS {self.db_name} LOCATION `{self.temp_env}`; """)
+        self.spark.sql(f"""CREATE DATABASE IF NOT EXISTS {self.db_name} LOCATION '{self.temp_env}'; """)
         print(f"Initializing Root Temp Environment: {self.db_name} at {self.temp_env}")
         
         return
     
 
-    def createOrReplaceDeltaTempTable(self, df, table_name):
+    def createOrReplaceTempDeltaTable(self, df, table_name):
         
         tblObj = {}
         new_table_id = table_name
@@ -45,7 +45,7 @@ class DeltaHelpers():
         persisted_df = self.spark.read.format("delta").load(write_path)
         return persisted_df
  
-    def appendToDeltaTempTable(self, df, table_name):
+    def appendToTempDeltaTable(self, df, table_name):
         
         tblObj = {}
         new_table_id = table_name
@@ -56,7 +56,7 @@ class DeltaHelpers():
         persisted_df = self.spark.read.format("delta").load(write_path)
         return persisted_df
       
-    def removeDeltaTempTable(self, table_name):
+    def removeTempDeltaTable(self, table_name):
         
         table_path = self.temp_env + table_name
         self.dbutils.fs.rm(table_path, recurse=True)
@@ -116,3 +116,50 @@ class SchemaHelpers():
             ddl.append(f"value:{name}::{dType} AS {name}")
 
         return ddl
+      
+      
+      
+
+ 
+ 
+class DeltaMergeHelpers():
+ 
+    def __init__(self):
+        return
+ 
+    @staticmethod
+    def retrySqlStatement(spark, operationName, sqlStatement, maxRetries = 10, maxSecondsBetweenAttempts=60):
+ 
+        import time
+        maxRetries = maxRetries
+        numRetries = 0
+        maxWaitTime = maxSecondsBetweenAttempts
+        ### Does not check for existence, ensure that happens before merge
+ 
+        while numRetries <= maxRetries:
+ 
+            try: 
+ 
+                print(f"SQL Statement Attempt for {operationName} #{numRetries + 1}...")
+ 
+                spark.sql(sqlStatement)
+ 
+                print(f"SQL Statement Attempt for {operationName} #{numRetries + 1} Successful!")
+                break
+ 
+            except Exception as e:
+                error_msg = str(e)
+ 
+                print(f"Failed SQL Statment Attmpet for {operationName} #{numRetries} with error: {error_msg}")
+ 
+                numRetries += 1
+                if numRetries > maxRetries:
+                    break
+ 
+            waitTime = waitTime = 2**(numRetries-1) ## Wait longer up to max wait time for failed operations
+ 
+            if waitTime > maxWaitTime:
+                waitTime = maxWaitTime
+ 
+            print(f"Waiting {waitTime} seconds before next attempt on {operationName}...")
+            time.sleep(waitTime)
