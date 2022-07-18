@@ -192,17 +192,17 @@ FROM iot_dashboard.silver_sensors;
 -- DBTITLE 1,Incrementally Ingest Raw User Data
 COPY INTO iot_dashboard.bronze_users
 FROM (SELECT 
-userid::bigint AS userid,
-gender AS gender,
-age::integer AS age,
-height::decimal(10,2) AS height, 
-weight::decimal(10,2) AS weight,
-smoker AS smoker,
-familyhistory AS familyhistory,
-cholestlevs AS cholestlevs,
-bp AS bp,
-risk::decimal(10,2) AS risk,
-current_timestamp() AS update_timestamp
+      userid::bigint AS userid,
+      gender AS gender,
+      age::integer AS age,
+      height::decimal(10,2) AS height, 
+      weight::decimal(10,2) AS weight,
+      smoker AS smoker,
+      familyhistory AS familyhistory,
+      cholestlevs AS cholestlevs,
+      bp AS bp,
+      risk::decimal(10,2) AS risk,
+      current_timestamp() AS update_timestamp
 FROM "/databricks-datasets/iot-stream/data-user/")
 FILEFORMAT = CSV
 FORMAT_OPTIONS('header'='true')
@@ -227,7 +227,7 @@ update_timestamp TIMESTAMP
 )
 USING DELTA 
 TBLPROPERTIES("delta.targetFileSize"="128mb")
---LOCATION s3://<path>/
+--LOCATION s3://<path>/ -- Always specify path for production tables. 
 ;
 
 -- COMMAND ----------
