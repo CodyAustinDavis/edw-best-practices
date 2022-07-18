@@ -178,7 +178,7 @@ FOR COLUMNS(device_id OPTIONS (fpp=0.1, numItems=50000000))
 SELECT 
 *,
 value:user_id::integer AS parsed_user,
-value:time_stamp::timestamp AS parsed_time
+value:time_stamp::timestamp AS parsed_time -- Pro tip: You can do the same thing if reading in json via the text reader. Makes for highly flexible data ingestion
 FROM iot_dashboard.silver_sensors;
 
 -- COMMAND ----------
