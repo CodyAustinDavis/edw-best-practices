@@ -67,14 +67,14 @@ TBLPROPERTIES("delta.targetFileSize"="128mb")
 -- DBTITLE 1,Incrementally Ingest Source Data from Raw Files
 COPY INTO iot_dashboard.bronze_sensors
 FROM (SELECT 
-id::bigint AS Id,
-device_id::integer AS device_id,
-user_id::integer AS user_id,
-calories_burnt::decimal(10,2) AS calories_burnt, 
-miles_walked::decimal(10,2) AS miles_walked, 
-num_steps::decimal(10,2) AS num_steps, 
-timestamp::timestamp AS timestamp,
-value AS value
+      id::bigint AS Id,
+      device_id::integer AS device_id,
+      user_id::integer AS user_id,
+      calories_burnt::decimal(10,2) AS calories_burnt, 
+      miles_walked::decimal(10,2) AS miles_walked, 
+      num_steps::decimal(10,2) AS num_steps, 
+      timestamp::timestamp AS timestamp,
+      value AS value -- This is a JSON object
 FROM "/databricks-datasets/iot-stream/data-device/")
 FILEFORMAT = json
 COPY_OPTIONS('force'='true') --option to be incremental or always load all files
@@ -96,7 +96,8 @@ value STRING
 )
 USING DELTA 
 TBLPROPERTIES("delta.targetFileSize"="128mb") -- if update heavy, file sizes are great between 64-128 mbs
---LOCATION s3://<path>/
+--LOCATION s3://<path>/ -- Always specify location for production tables so you control where it lives in S3/ADLS/GCS
+-- Not specifying location parth will put table in DBFS, a managed bucket that cannot be accessed by apps outside of databricks
 ;
 
 -- COMMAND ----------
@@ -123,6 +124,8 @@ WHEN MATCHED THEN UPDATE SET
   target.timestamp = source.timestamp
 WHEN NOT MATCHED THEN INSERT *;
 
+-- This calculate table stats for all columns to ensure the optimizer can build the best plan
+ANALYZE TABLE iot_dashboard_silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
 --Truncate bronze batch once successfully loaded
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
 
@@ -168,6 +171,15 @@ OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (user_id, device_id, timestamp);
 CREATE BLOOMFILTER INDEX
 ON TABLE iot_dashboard.silver_sensors
 FOR COLUMNS(device_id OPTIONS (fpp=0.1, numItems=50000000))
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Select Semi Structured/Unstructred Data with JSON dot notation
+SELECT 
+*,
+value:user_id::integer AS parsed_user,
+value:time_stamp::timestamp AS parsed_time
+FROM iot_dashboard.silver_sensors;
 
 -- COMMAND ----------
 
