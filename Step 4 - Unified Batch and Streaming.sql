@@ -60,12 +60,14 @@
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Look at Raw Data Source
 -- MAGIC %python 
 -- MAGIC 
 -- MAGIC dbutils.fs.ls('dbfs:/databricks-datasets/iot-stream/data-device/')
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Imports
 -- MAGIC %python
 -- MAGIC 
 -- MAGIC from pyspark.sql.functions import *
@@ -73,19 +75,31 @@
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Create Database
 CREATE DATABASE IF NOT EXISTS iot_dashboard_autoloader
 --LOCATION 's3a://<path>'
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Let Autoloader Sample files for schema inference - backfill interval can refresh this inference
+-- MAGIC %python 
+-- MAGIC ## for schema inference
+-- MAGIC spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 100)
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Read Stream with Autoloader - LOTS of Options for any type of data
 -- MAGIC %python
 -- MAGIC 
 -- MAGIC   df_raw = (spark
 -- MAGIC      .readStream
 -- MAGIC      .format("cloudFiles")
 -- MAGIC      .option("cloudFiles.format", "json")
+-- MAGIC      #.option("cloudFiles.useNotifications", "true")
 -- MAGIC      .option("cloudFiles.schemaLocation", autoloader_schema_location)
 -- MAGIC      #.option("schema", inputSchema)
+-- MAGIC      #.option("modifiedAfter", timestampString) ## option
+-- MAGIC      .option("cloudFiles.schemaHints", "calories_burnt FLOAT, timestamp TIMESTAMP")
 -- MAGIC      .option("cloudFiles.maxFilesPerTrigger", 10) ## maxByesPerTrigger, 10mb
 -- MAGIC      .option("pathGlobFilter", "*.json.gz") ## Only certain files ## regex expr
 -- MAGIC      .load(file_source_location)
@@ -116,7 +130,6 @@ CREATE DATABASE IF NOT EXISTS iot_dashboard_autoloader
 -- MAGIC .writeStream
 -- MAGIC .format("delta")
 -- MAGIC .option("checkpointLocation", checkpoint_location)
--- MAGIC .mode("append") ## "complete", "update" 
 -- MAGIC .trigger(availableNow=True) ## once=True, processingTime = '5 minutes', continuous='1 minute'
 -- MAGIC .toTable("iot_dashboard_autoloader.bronze_sensors")
 -- MAGIC )
@@ -193,11 +206,17 @@ AS SELECT * FROM iot_dashboard_autoloader.bronze_sensors WHERE 1=2;
 
 -- COMMAND ----------
 
+-- MAGIC %python
+-- MAGIC dbutils.fs.rm(checkpoint_location_silver, recurse=True)
+
+-- COMMAND ----------
+
 -- DBTITLE 1,Write Stream as often as you want
 -- MAGIC %python
 -- MAGIC 
 -- MAGIC (df_bronze
 -- MAGIC .writeStream
+-- MAGIC #.mode("append") ## "complete", "update" 
 -- MAGIC .option("checkpointLocation", checkpoint_location_silver)
 -- MAGIC .trigger(availableNow=True) ## processingTime='1 minute' -- Now we can run this merge every minute!
 -- MAGIC .foreachBatch(mergeStatementForMicroBatch)
