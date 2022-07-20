@@ -21,47 +21,47 @@ CREATE OR REPLACE VIEW iot_dashboard.smoothed_hourly_statistics
 AS 
 SELECT *,
 -- Number of Steps
-avg(`AvgNumStepsAcrossDevices`) OVER (
+(avg(`AvgNumStepsAcrossDevices`) OVER (
         ORDER BY `HourBucket`
         ROWS BETWEEN
           4 PRECEDING AND
           CURRENT ROW
-      ) AS SmoothedNumSteps4HourMA, -- 4 hour moving average
+      )) ::float AS SmoothedNumSteps4HourMA, -- 4 hour moving average
       
-avg(`AvgNumStepsAcrossDevices`) OVER (
+(avg(`AvgNumStepsAcrossDevices`) OVER (
         ORDER BY `HourBucket`
         ROWS BETWEEN
           24 PRECEDING AND
           CURRENT ROW
-      ) AS SmoothedNumSteps12HourMA --24 hour moving average
+      ))::float AS SmoothedNumSteps12HourMA --24 hour moving average
 ,
 -- Calories Burned
-avg(`AvgCaloriesBurnedAcrossDevices`) OVER (
+(avg(`AvgCaloriesBurnedAcrossDevices`) OVER (
         ORDER BY `HourBucket`
         ROWS BETWEEN
           4 PRECEDING AND
           CURRENT ROW
-      ) AS SmoothedCalsBurned4HourMA, -- 4 hour moving average
+      ))::float AS SmoothedCalsBurned4HourMA, -- 4 hour moving average
       
-avg(`AvgCaloriesBurnedAcrossDevices`) OVER (
+(avg(`AvgCaloriesBurnedAcrossDevices`) OVER (
         ORDER BY `HourBucket`
         ROWS BETWEEN
           24 PRECEDING AND
           CURRENT ROW
-      ) AS SmoothedCalsBurned12HourMA --24 hour moving average,
+      ))::float AS SmoothedCalsBurned12HourMA --24 hour moving average,
 ,
 -- Miles Walked
-avg(`AvgMilesWalkedAcrossDevices`) OVER (
+(avg(`AvgMilesWalkedAcrossDevices`) OVER (
         ORDER BY `HourBucket`
         ROWS BETWEEN
           4 PRECEDING AND
           CURRENT ROW
-      ) AS SmoothedMilesWalked4HourMA, -- 4 hour moving average
+      ))::float AS SmoothedMilesWalked4HourMA, -- 4 hour moving average
       
-avg(`AvgMilesWalkedAcrossDevices`) OVER (
+(avg(`AvgMilesWalkedAcrossDevices`) OVER (
         ORDER BY `HourBucket`
         ROWS BETWEEN
           24 PRECEDING AND
           CURRENT ROW
-      ) AS SmoothedMilesWalked12HourMA --24 hour moving average
+      ))::float AS SmoothedMilesWalked12HourMA --24 hour moving average
 FROM iot_dashboard.hourly_summary_statistics
