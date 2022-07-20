@@ -84,7 +84,7 @@ CREATE DATABASE IF NOT EXISTS iot_dashboard_autoloader
 -- DBTITLE 1,Let Autoloader Sample files for schema inference - backfill interval can refresh this inference
 -- MAGIC %python 
 -- MAGIC ## for schema inference
--- MAGIC spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 100)
+-- MAGIC spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 100) ## 1000 is default
 
 -- COMMAND ----------
 
@@ -202,6 +202,11 @@ AS SELECT * FROM iot_dashboard_autoloader.bronze_sensors WHERE 1=2;
 -- MAGIC   .whenNotMatchedInsertAll()
 -- MAGIC   .execute()
 -- MAGIC   )
+-- MAGIC   
+-- MAGIC   ## optimize table after the merge
+-- MAGIC   
+-- MAGIC   spark.sql("""OPTIMIZE iot_dashboard_autoloader.silver_sensors ZORDER BY (device_id)""")
+-- MAGIC   
 -- MAGIC   return
 
 -- COMMAND ----------

@@ -38,11 +38,11 @@ num_steps DECIMAL(10,2),
 timestamp TIMESTAMP,
 value STRING
 )
-USING DELTA 
+USING DELTA
 TBLPROPERTIES("delta.targetFileSize"="128mb")
 -- Other helpful properties
 -- delta.dataSkippingNumIndexedCols -- decides how many columns are automatically tracked with statistics kepts (defaults to first 32)
---LOCATION s3://<path>/
+-- LOCATION "s3://bucket-name/data_lakehouse/tables/data/bronze_senors/"
 ;
 
 -- COMMAND ----------
@@ -118,7 +118,7 @@ FROM (SELECT
       miles_walked::decimal(10,2) AS miles_walked, 
       num_steps::decimal(10,2) AS num_steps, 
       timestamp::timestamp AS timestamp,
-      value AS value -- This is a JSON object
+      value  AS value -- This is a JSON object
 FROM "/databricks-datasets/iot-stream/data-device/")
 FILEFORMAT = json
 COPY_OPTIONS('force'='true') --option to be incremental or always load all files
@@ -127,6 +127,7 @@ COPY_OPTIONS('force'='true') --option to be incremental or always load all files
 --Other Helpful copy options: 
 
 /*
+PATTERN('[A-Za-z].csv')
 FORMAT_OPTIONS ('ignoreCorruptFiles' = 'true') -- skips bad files for more robust incremental loads
 COPY_OPTIONS ('mergeSchema' = 'true');
 
@@ -179,6 +180,7 @@ WHEN NOT MATCHED THEN INSERT *;
 
 -- This calculate table stats for all columns to ensure the optimizer can build the best plan
 ANALYZE TABLE iot_dashboard_silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
+
 --Truncate bronze batch once successfully loaded
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
 
