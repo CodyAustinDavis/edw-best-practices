@@ -3,6 +3,8 @@
 -- MAGIC 
 -- MAGIC # This notebook generates a full data pipeline from databricks dataset - iot-stream
 -- MAGIC 
+-- MAGIC #### Define the SQL - Add as a library to a DLT pipeline, and run the pipeline!
+-- MAGIC 
 -- MAGIC ## This creates 2 tables: 
 -- MAGIC 
 -- MAGIC <b> Database: </b> iot_dashboard

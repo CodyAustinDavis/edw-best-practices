@@ -65,3 +65,8 @@ SELECT *,
           CURRENT ROW
       ))::float AS SmoothedMilesWalked12HourMA --24 hour moving average
 FROM iot_dashboard.hourly_summary_statistics
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Build Visuals in DBSQL, Directly in Notebook, or in any BI tool!
+SELECT * FROM iot_dashboard.smoothed_hourly_statistics

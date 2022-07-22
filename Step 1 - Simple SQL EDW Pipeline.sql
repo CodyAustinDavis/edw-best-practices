@@ -16,7 +16,7 @@
 -- DBTITLE 1,Medallion Architecture
 -- MAGIC %md
 -- MAGIC 
--- MAGIC <img src="https://databricks.com/wp-content/uploads/2019/08/Delta-Lake-Multi-Hop-Architecture-Bronze.png" >
+-- MAGIC <img src="https://databricks.com/wp-content/uploads/2022/03/delta-lake-medallion-architecture-2.jpeg" >
 
 -- COMMAND ----------
 
