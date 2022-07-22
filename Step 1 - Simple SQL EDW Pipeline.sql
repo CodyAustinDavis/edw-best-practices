@@ -87,8 +87,7 @@ TBLPROPERTIES("delta.targetFileSize"="128mb")
 -- COMMAND ----------
 
 --With DBR 11, we dont need to specify DDL first
-/*
-CREATE TABLE IF NOT EXISTS iot_dashboard.bronze_sensors;
+--CREATE TABLE IF NOT EXISTS iot_dashboard.bronze_sensors
 
 COPY INTO iot_dashboard.bronze_sensors
 FROM (SELECT 
@@ -102,9 +101,10 @@ FROM (SELECT
       value AS value -- This is a JSON object
 FROM "/databricks-datasets/iot-stream/data-device/")
 FILEFORMAT = json
-COPY_OPTIONS('force'='true') --option to be incremental or always load all files
-;
-*/
+COPY_OPTIONS('force'='true') -- 'false' -- process incrementally
+--option to be incremental or always load all files
+; 
+
 
 -- COMMAND ----------
 
@@ -121,18 +121,15 @@ FROM (SELECT
       value  AS value -- This is a JSON object
 FROM "/databricks-datasets/iot-stream/data-device/")
 FILEFORMAT = json
-COPY_OPTIONS('force'='true') --option to be incremental or always load all files
-;
+COPY_OPTIONS('force'='false') --'true' always loads all data it sees. option to be incremental or always load all files
+
 
 --Other Helpful copy options: 
-
 /*
 PATTERN('[A-Za-z].csv')
 FORMAT_OPTIONS ('ignoreCorruptFiles' = 'true') -- skips bad files for more robust incremental loads
-COPY_OPTIONS ('mergeSchema' = 'true');
-
-
-*/
+COPY_OPTIONS ('mergeSchema' = 'true')
+*/;
 
 -- COMMAND ----------
 
@@ -179,9 +176,9 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT *;
 
 -- This calculate table stats for all columns to ensure the optimizer can build the best plan
-ANALYZE TABLE iot_dashboard_silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
+ANALYZE TABLE iot_dashboard.silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
 
---Truncate bronze batch once successfully loaded
+-- Truncate bronze batch once successfully loaded
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
 
 -- COMMAND ----------
@@ -209,6 +206,7 @@ ALTER TABLE iot_dashboard.silver_sensors SET TBLPROPERTIES ('delta.targetFileSiz
 -- COMMAND ----------
 
 -- DBTITLE 1,Table Optimizations
+-- You want to optimize by high cardinality columns like ids, timestamps, strings
 OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (user_id, device_id, timestamp);
 
 -- COMMAND ----------
