@@ -19,7 +19,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Import
-from include.deltahelpers import DeltaHelpers
+from helperfunctions.deltahelpers import DeltaHelpers
 
 # COMMAND ----------
 

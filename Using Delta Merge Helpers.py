@@ -9,7 +9,7 @@
 
 # COMMAND ----------
 
-from include.deltahelpers import DeltaMergeHelpers
+from helperfunctions.deltahelpers import DeltaMergeHelpers
 
 # COMMAND ----------
 
