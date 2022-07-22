@@ -13,6 +13,13 @@
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Medallion Architecture
+-- MAGIC %md
+-- MAGIC 
+-- MAGIC <img src="https://databricks.com/wp-content/uploads/2019/08/Delta-Lake-Multi-Hop-Architecture-Bronze.png" >
+
+-- COMMAND ----------
+
 DROP DATABASE IF EXISTS iot_dashboard CASCADE;
 CREATE DATABASE IF NOT EXISTS iot_dashboard;
 USE iot_dashboard;
