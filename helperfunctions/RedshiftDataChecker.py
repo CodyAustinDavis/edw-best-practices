@@ -15,12 +15,12 @@ class RedshiftChecker():
     1. Assumes Redshift Connector is installed on the running cluster
     2. Assumes cluster has IAM Instance profile access to the requested Databricks tables
     3. Assumes detection, public database is same in both envs
-    4. Automatically maps staging --> ardent and vice-versa
     
     
     ## TO DO: 
     1. Add Data Type Comparisons
     2. Add Row-level comparisons
+    
     """
     
     def __init__(self, connectionString, iamRole, tempDir):

@@ -49,7 +49,7 @@ USING DELTA
 TBLPROPERTIES("delta.targetFileSize"="128mb")
 -- Other helpful properties
 -- delta.dataSkippingNumIndexedCols -- decides how many columns are automatically tracked with statistics kepts (defaults to first 32)
--- LOCATION "s3://bucket-name/data_lakehouse/tables/data/bronze_senors/"
+-- LOCATION "s3://bucket-name/data_lakehouse/tables/data/bronze/bronze_senors/"
 ;
 
 -- COMMAND ----------
@@ -93,24 +93,25 @@ TBLPROPERTIES("delta.targetFileSize"="128mb")
 
 -- COMMAND ----------
 
+
 --With DBR 11, we dont need to specify DDL first
 --CREATE TABLE IF NOT EXISTS iot_dashboard.bronze_sensors
 
-COPY INTO iot_dashboard.bronze_sensors
-FROM (SELECT 
-      id::bigint AS Id,
-      device_id::integer AS device_id,
-      user_id::integer AS user_id,
-      calories_burnt::decimal(10,2) AS calories_burnt, 
-      miles_walked::decimal(10,2) AS miles_walked, 
-      num_steps::decimal(10,2) AS num_steps, 
-      timestamp::timestamp AS timestamp,
-      value AS value -- This is a JSON object
-FROM "/databricks-datasets/iot-stream/data-device/")
-FILEFORMAT = json
-COPY_OPTIONS('force'='true') -- 'false' -- process incrementally
+--COPY INTO iot_dashboard.bronze_sensors
+--FROM (SELECT 
+--      id::bigint AS Id,
+--      device_id::integer AS device_id,
+--      user_id::integer AS user_id,
+--      calories_burnt::decimal(10,2) AS calories_burnt, 
+--      miles_walked::decimal(10,2) AS miles_walked, 
+--      num_steps::decimal(10,2) AS num_steps, 
+--     timestamp::timestamp AS timestamp,
+--      value AS value -- This is a JSON object
+--FROM "/databricks-datasets/iot-stream/data-device/")
+--FILEFORMAT = json
+--COPY_OPTIONS('force'='true') -- 'false' -- process incrementally
 --option to be incremental or always load all files
-; 
+ 
 
 
 -- COMMAND ----------
@@ -136,6 +137,7 @@ COPY_OPTIONS('force'='false') --'true' always loads all data it sees. option to 
 PATTERN('[A-Za-z].csv')
 FORMAT_OPTIONS ('ignoreCorruptFiles' = 'true') -- skips bad files for more robust incremental loads
 COPY_OPTIONS ('mergeSchema' = 'true')
+'ignoreChanges' = 'true'
 */;
 
 -- COMMAND ----------
@@ -161,7 +163,6 @@ TBLPROPERTIES("delta.targetFileSize"="128mb") -- if update heavy, file sizes are
 -- COMMAND ----------
 
 -- DBTITLE 1,Perform Upserts - Device Data
-
 MERGE INTO iot_dashboard.silver_sensors AS target
 USING (SELECT Id::integer,
               device_id::integer,
@@ -184,6 +185,7 @@ WHEN NOT MATCHED THEN INSERT *;
 
 -- This calculate table stats for all columns to ensure the optimizer can build the best plan
 ANALYZE TABLE iot_dashboard.silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
+OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp);
 
 -- Truncate bronze batch once successfully loaded
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
