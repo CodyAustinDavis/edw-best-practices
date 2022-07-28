@@ -12,7 +12,7 @@ date_trunc('hour', timestamp) AS HourBucket,
 AVG(num_steps)::float AS AvgNumStepsAcrossDevices,
 AVG(calories_burnt)::float AS AvgCaloriesBurnedAcrossDevices,
 AVG(miles_walked)::float AS AvgMilesWalkedAcrossDevices
-FROM iot_dashboard.silver_sensors WHERE user_id = 1
+FROM iot_dashboard.silver_sensors
 GROUP BY user_id,date_trunc('hour', timestamp)
 ORDER BY HourBucket;
 
@@ -68,5 +68,9 @@ FROM iot_dashboard.hourly_summary_statistics
 
 -- COMMAND ----------
 
+
+
+-- COMMAND ----------
+
 -- DBTITLE 1,Build Visuals in DBSQL, Directly in Notebook, or in any BI tool!
-SELECT * FROM iot_dashboard.smoothed_hourly_statistics
+SELECT * FROM iot_dashboard.smoothed_hourly_statistics WHERE user_id = 1
