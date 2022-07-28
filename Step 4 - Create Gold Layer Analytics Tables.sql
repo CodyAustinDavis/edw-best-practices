@@ -5,19 +5,19 @@
 
 -- COMMAND ----------
 
-CREATE OR REPLACE VIEW iot_dashboard.hourly_summary_statistics
+CREATE OR REPLACE TABLE iot_dashboard.hourly_summary_statistics
 AS
 SELECT user_id,
 date_trunc('hour', timestamp) AS HourBucket,
-AVG(num_steps) AS AvgNumStepsAcrossDevices,
-AVG(calories_burnt) AS AvgCaloriesBurnedAcrossDevices,
-AVG(miles_walked) AS AvgMilesWalkedAcrossDevices
+AVG(num_steps)::float AS AvgNumStepsAcrossDevices,
+AVG(calories_burnt)::float AS AvgCaloriesBurnedAcrossDevices,
+AVG(miles_walked)::float AS AvgMilesWalkedAcrossDevices
 FROM iot_dashboard.silver_sensors WHERE user_id = 1
 GROUP BY user_id,date_trunc('hour', timestamp)
 ORDER BY HourBucket;
 
 
-CREATE OR REPLACE VIEW iot_dashboard.smoothed_hourly_statistics
+CREATE OR REPLACE TABLE iot_dashboard.smoothed_hourly_statistics
 AS 
 SELECT *,
 -- Number of Steps
