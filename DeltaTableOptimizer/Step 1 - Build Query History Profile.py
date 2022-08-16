@@ -4,10 +4,18 @@
 # MAGIC ## This notebook uses the query history API on Databricks SQL to pull the query history for all users within the last X days and builds a SQL profile from the query text to find most key columns to ZORDER on
 # MAGIC 
 # MAGIC 
+# MAGIC ### RETURNS
+# MAGIC 
+# MAGIC 1. delta_optimizer.query_column_statistics - Column level query stats
+# MAGIC 2. delta_optimizer.query_summary_statistics - Query level query stats
+# MAGIC 3. delta_optimizer.raw_query_history_statistics - Raw Query History Stats
+# MAGIC 
 # MAGIC ### Depedencies
 # MAGIC <li> https://github.com/macbre/sql-metadata -- pip install sql-metadata
 # MAGIC <li> Ensure that you either get a token as a secret or use a cluster with the env variable called DBX_TOKEN to authenticate to DBSQL
 # MAGIC 
+# MAGIC   
+# MAGIC   
 # MAGIC   
 # MAGIC DBX_TOKEN = os.environ.get("DBX_TOKEN")
 
@@ -147,12 +155,6 @@ while has_next_page is True:
 # COMMAND ----------
 
 # DBTITLE 1,Collect Final Responses and Save to Delta for SQL Tree Parsing
-final_responses = initial_resp + page_responses
-
-print(f"Saving {len(final_responses)} Queries To Delta for Profiling")
-
-# COMMAND ----------
-
 all_responses = [x for xs in page_responses for x in xs] + initial_resp
 
 print(f"Saving {len(all_responses)} Queries To Delta for Profiling")
@@ -208,23 +210,17 @@ raw_queries_df.createOrReplaceTempView("raw")
 # MAGIC     SELECT query_id,
 # MAGIC     AVG(duration) AS AverageQueryDuration,
 # MAGIC     AVG(rows_produced) AS AverageRowsProduced,
-# MAGIC     COUNT(*) AS TotalQueryRuns
+# MAGIC     COUNT(*) AS TotalQueryRuns,
+# MAGIC     AVG(duration)*COUNT(*) AS DurationTimesRuns
 # MAGIC     FROM delta_optimizer.raw_query_history_statistics
 # MAGIC     WHERE status = 'FINISHED'
 # MAGIC     AND statement_type = 'SELECT'
 # MAGIC     GROUP BY query_id
 # MAGIC   )
 # MAGIC   SELECT 
-# MAGIC   *,
-# MAGIC   ROW_NUMBER() OVER(ORDER BY AverageQueryDuration DESC) AS QueryImportanceRank
+# MAGIC   *
 # MAGIC   FROM raw_query_stats
 # MAGIC )
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * FROM delta_optimizer.raw_query_history_statistics
 
 # COMMAND ----------
 
@@ -284,6 +280,7 @@ def getPotentialJoinedColumns(sqlString):
 # DBTITLE 1,Parse SQL Tree for filtered columns and table map
 @udf("array<string>")
 def getParsedFilteredColumnsinSQL(sqlString):
+  
   ## output ["table_name:column_name,table_name:colunmn:name"]
   final_table_map = []
   
@@ -342,6 +339,7 @@ def getParsedFilteredColumnsinSQL(sqlString):
 
     ## Final Results will be a crosswalk of table_name, column_name, # of times used in joins/filters from ALL queries, # of queries used in join/filters
     #parsed_results = {}
+    
   except Exception as e:
     final_table_map = [str(f"ERROR: {str(e)}")]
   
@@ -367,38 +365,6 @@ df_profiled.write.format("delta").saveAsTable("delta_optimizer.parsed_distinct_q
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC WITH exploded_parsed_cols AS (SELECT 
-# MAGIC explode(profiled_columns) AS explodedCols,
-# MAGIC query_id,
-# MAGIC query_text
-# MAGIC FROM delta_optimizer.parsed_distinct_queries
-# MAGIC ),
-# MAGIC 
-# MAGIC step2 AS (
-# MAGIC SELECT 
-# MAGIC split(explodedCols, ":")[0] AS TableName,
-# MAGIC split(explodedCols, ":")[1] AS ColumnName,
-# MAGIC query_id,
-# MAGIC query_text
-# MAGIC FROM exploded_parsed_cols),
-# MAGIC 
-# MAGIC step3 AS (
-# MAGIC   SELECT
-# MAGIC   TableName,
-# MAGIC   ColumnName,
-# MAGIC   COUNT(DISTINCT query_id) AS NumberOfQueriesFilteringOnThisColumn
-# MAGIC   FROM step2
-# MAGIC   GROUP BY TableName, ColumnName
-# MAGIC )
-# MAGIC 
-# MAGIC SELECT * 
-# MAGIC FROM step3
-# MAGIC WHERE TableName LIKE ('codydemos%')
-# MAGIC ORDER BY TableName, NumberOfQueriesFilteringOnThisColumn DESC 
-
-# COMMAND ----------
-
 # DBTITLE 1,Calculate Statistics
 # MAGIC %sql
 # MAGIC 
@@ -406,18 +372,30 @@ df_profiled.write.format("delta").saveAsTable("delta_optimizer.parsed_distinct_q
 # MAGIC 
 # MAGIC CREATE OR REPLACE TABLE delta_optimizer.query_column_statistics
 # MAGIC AS (
-# MAGIC   WITH exploded_parsed_cols AS (SELECT 
+# MAGIC   WITH exploded_parsed_cols AS (SELECT DISTINCT
 # MAGIC   explode(profiled_columns) AS explodedCols,
 # MAGIC   query_id,
 # MAGIC   query_text
 # MAGIC   FROM delta_optimizer.parsed_distinct_queries
-# MAGIC   )
+# MAGIC   ),
 # MAGIC 
-# MAGIC   SELECT 
+# MAGIC   step_2 AS (SELECT DISTINCT
 # MAGIC   split(explodedCols, ":")[0] AS TableName,
 # MAGIC   split(explodedCols, ":")[1] AS ColumnName,
 # MAGIC   root.query_text,
 # MAGIC   hist.*
 # MAGIC   FROM exploded_parsed_cols AS root
 # MAGIC   LEFT JOIN delta_optimizer.query_summary_statistics AS hist USING (query_id)--SELECT statements only included
+# MAGIC   )
+# MAGIC   
+# MAGIC   SELECT *,
+# MAGIC   size(split(query_text, ColumnName)) - 1 AS NumberOfColumnOccurrences
+# MAGIC   FROM step_2
 # MAGIC )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * 
+# MAGIC FROM delta_optimizer.query_column_statistics

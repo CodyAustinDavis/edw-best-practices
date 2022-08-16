@@ -68,9 +68,5 @@ FROM iot_dashboard.hourly_summary_statistics
 
 -- COMMAND ----------
 
-
-
--- COMMAND ----------
-
 -- DBTITLE 1,Build Visuals in DBSQL, Directly in Notebook, or in any BI tool!
 SELECT * FROM iot_dashboard.smoothed_hourly_statistics WHERE user_id = 1

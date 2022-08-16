@@ -54,15 +54,6 @@ TBLPROPERTIES("delta.targetFileSize"="128mb")
 
 -- COMMAND ----------
 
--- DBTITLE 1,Create a Partitioned Table
--- MAGIC %sql
--- MAGIC 
--- MAGIC CREATE TABLE iot_dashboard.bronze_sensors_partitioned 
--- MAGIC PARTITIONED BY (user_id)
--- MAGIC AS SELECT * FROM iot_dashboard.silver_sensors;
-
--- COMMAND ----------
-
 -- DBTITLE 1,Look at Table Details
 -- MAGIC %sql
 -- MAGIC 

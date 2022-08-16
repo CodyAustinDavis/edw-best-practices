@@ -162,7 +162,8 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 # COMMAND ----------
 
 # DBTITLE 1,Stream with Delta options
-df_bronze = (spark.readStream
+df_bronze = (
+  spark.readStream
 #.option("startingVersion", "1") ## Or .option("startingTimestamp", "2018-10-18") You can optionally explicitly state which version to start streaming from
 .option("ignoreChanges", "true") ## .option("ignoreDeletes", "true")
 .option("maxFilesPerTrigger", 100) ## Optional - FIFO processing

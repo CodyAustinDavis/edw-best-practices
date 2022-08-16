@@ -3,6 +3,10 @@
 # MAGIC 
 # MAGIC ### For all tables in a given database/catalog level, get the transaction log and find the columns most used in the MERGE or other predicates and collect stats
 # MAGIC 
+# MAGIC ### RETURNS
+# MAGIC 
+# MAGIC 1. 
+# MAGIC 
 # MAGIC <b> Dependencies: </b> None
 
 # COMMAND ----------
@@ -14,13 +18,38 @@ from pyspark.sql import Row
 
 # COMMAND ----------
 
-dbutils.widgets.text("Database Name: ", "")
-
-database = dbutils.widgets.get("Database Name: ")
+dbutils.widgets.text("Database Names (csv):", "")
+dbutils.widgets.dropdown("Mode (all databases or a subset)", "Subset", ["All", "Subset"])
+database = dbutils.widgets.get("Database Names (csv):")
+db_mode = dbutils.widgets.get("Mode (all databases or a subset)")
 
 # COMMAND ----------
 
-df = (spark.sql(f"""SHOW TABLES IN {database}""")
+db_list = [x.strip() for x in database.split(",") if x != '']
+
+
+tbl_df = spark.sql("show tables in default like 'xxx'")
+#Loop through all databases
+for db in spark.sql("show databases").filter(col("databaseName").isin(db_list)).collect():
+  #create a dataframe with list of tables from the database
+  df = spark.sql(f"show tables in {db.databaseName}")
+  #union the tables list dataframe with main dataframe 
+  tbl_df = tbl_df.union(df)
+  
+if db_mode == "All" or len(db_list) == 0:
+  
+  print("Getting transaction logs for all tables and databases")
+  
+  df = (tbl_df
+      .filter(col("isTemporary") == lit('false'))
+     )
+  
+elif db_mode == "Subset":
+  
+  print(f"Getting transaction logs for all tables in {db_list}")
+  
+  df = (tbl_df
+        .filter(col("database").isin(db_list))
       .filter(col("isTemporary") == lit('false'))
      )
 
@@ -48,6 +77,7 @@ TableName STRING,
 TableColumns STRING,
 HasColumnInMergePredicate INTEGER,
 NumberOfVersionsPredicateIsUsed INTEGER,
+AvgMergeRuntimeMs INTEGER,
 UpdateTimestamp TIMESTAMP)
 USING DELTA;
 """)
@@ -64,7 +94,8 @@ for tbl in  table_list:
   )
 
   SELECT version, timestamp,
-  operationParameters.predicate
+  operationParameters.predicate,
+  operationMetrics.executionTimeMs
   FROM hist
   WHERE operation = 'MERGE'
   ;
@@ -94,16 +125,27 @@ for tbl in  table_list:
 
     SELECT Columns AS TableColumns,
     CASE WHEN MAX(HasColumnInMergePredicate) = 'true' THEN 1 ELSE 0 END AS HasColumnInMergePredicate,
-    COUNT(DISTINCT CASE WHEN HasColumnInMergePredicate = 'true' THEN `version` ELSE NULL END)::integer AS NumberOfVersionsPredicateIsUsed
+    COUNT(DISTINCT CASE WHEN HasColumnInMergePredicate = 'true' THEN `version` ELSE NULL END)::integer AS NumberOfVersionsPredicateIsUsed,
+    AVG(executionTimeMs::integer) AS AvgMergeRuntimeMs
     FROM raw_results
     GROUP BY Columns
     """)
                 .withColumn("TableName", lit(tbl))
                 .withColumn("UpdateTimestamp", current_timestamp())
-                .select("TableName", "TableColumns", "HasColumnInMergePredicate", "NumberOfVersionsPredicateIsUsed", "UpdateTimestamp")
+                .select("TableName", "TableColumns", "HasColumnInMergePredicate", "NumberOfVersionsPredicateIsUsed", "AvgMergeRuntimeMs", "UpdateTimestamp")
                )
   
-  (df_stats.write.format("delta").mode("append").saveAsTable("delta_optimizer.merge_predicate_statistics"))
+  (df_stats.createOrReplaceTempView("source_stats"))
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC MERGE INTO delta_optimizer.merge_predicate_statistics AS target
+# MAGIC USING source_stats AS source
+# MAGIC ON source.TableName = target.TableName AND source.TableColumns = target.TableColumns
+# MAGIC WHEN MATCHED THEN UPDATE SET * 
+# MAGIC WHEN NOT MATCHED THEN INSERT *
 
 # COMMAND ----------
 
