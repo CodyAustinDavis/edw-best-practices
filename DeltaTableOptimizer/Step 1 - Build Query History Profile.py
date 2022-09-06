@@ -68,6 +68,7 @@ print(f"Loading Query Profile to delta from workspace: {workspaceName} \n from W
 
 # COMMAND ----------
 
+# DBTITLE 1,Get Period Params for Query History request
 end_timestamp = datetime.now()
 start_timestamp = end_timestamp - timedelta(days = lookbackPeriod)
 
@@ -77,6 +78,7 @@ print(f"Getting Query History to parse from period: {start_timestamp} to {end_ti
 
 # COMMAND ----------
 
+# DBTITLE 1,Build Dynamic Request
 requestString = {
 "filter_by": {
   "query_start_time_range": {
@@ -92,26 +94,23 @@ requestString = {
 "max_results": "1000"
 }
 
-# COMMAND ----------
-
 ## Convert dict to json
 v = json.dumps(requestString)
 
 # COMMAND ----------
 
-## This API endpoint is not currently documented publicly
+# DBTITLE 1,Submit Initial Request
 uri = f"https://{workspaceName}/api/2.0/sql/history/queries"
 headers_auth = {"Authorization":f"Bearer {DBX_TOKEN}"}
 
 ## This file could be large
+## Convert response to dict
 endp_resp = requests.get(uri,data=v, headers=headers_auth).json()
-
-# COMMAND ----------
-
 initial_resp = endp_resp.get("res")
 
 # COMMAND ----------
 
+# DBTITLE 1,Check if we need to page through results
 next_page = endp_resp.get("next_page_token")
 has_next_page = endp_resp.get("has_next_page")
 
@@ -161,26 +160,20 @@ print(f"Saving {len(all_responses)} Queries To Delta for Profiling")
 
 # COMMAND ----------
 
-
-# notice the parens after the type name
-raw_queries_df = spark.createDataFrame(all_responses, StringType())
-
-# COMMAND ----------
-
+# DBTITLE 1,Create Data Frame from Responses
 raw_queries_df = (spark.createDataFrame(all_responses))
-
-# COMMAND ----------
-
 raw_queries_df.createOrReplaceTempView("raw")
 
 # COMMAND ----------
 
+# DBTITLE 1,Create Database to Store Results
 # MAGIC %sql
 # MAGIC 
 # MAGIC CREATE DATABASE IF NOT EXISTS delta_optimizer;
 
 # COMMAND ----------
 
+# DBTITLE 1,Parse Reponse for Columns we need to calculate statistics
 # MAGIC %sql
 # MAGIC CREATE OR REPLACE TABLE delta_optimizer.raw_query_history_statistics
 # MAGIC AS
@@ -196,6 +189,12 @@ raw_queries_df.createOrReplaceTempView("raw")
 # MAGIC metrics
 # MAGIC FROM raw
 # MAGIC WHERE statement_type = 'SELECT';
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM delta_optimizer.raw_query_history_statistics
 
 # COMMAND ----------
 
@@ -355,6 +354,7 @@ df.display()
 
 # COMMAND ----------
 
+# DBTITLE 1,Use Udf To Parse Query Text
 df_profiled = df.withColumn("profiled_columns", getParsedFilteredColumnsinSQL(F.col("query_text")))
 
 #df_profiled.createOrReplaceTempView("parsed")
@@ -362,6 +362,12 @@ df_profiled = df.withColumn("profiled_columns", getParsedFilteredColumnsinSQL(F.
 spark.sql("""DROP TABLE IF EXISTS delta_optimizer.parsed_distinct_queries""")
 
 df_profiled.write.format("delta").saveAsTable("delta_optimizer.parsed_distinct_queries")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM delta_optimizer.parsed_distinct_queries
 
 # COMMAND ----------
 

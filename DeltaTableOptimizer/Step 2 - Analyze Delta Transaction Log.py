@@ -8,6 +8,12 @@
 # MAGIC 1. 
 # MAGIC 
 # MAGIC <b> Dependencies: </b> None
+# MAGIC 
+# MAGIC 
+# MAGIC <b> Roadmap: </b> 
+# MAGIC <li> 1. Get Size of Table to set file size 
+# MAGIC <li> 2. Get Size of table to decide how often and which columns to collect stats on
+# MAGIC <li> 3. If there is a MERGE predicate, create DDL to tune file sizes for re-writes automatically
 
 # COMMAND ----------
 
@@ -25,10 +31,12 @@ db_mode = dbutils.widgets.get("Mode (all databases or a subset)")
 
 # COMMAND ----------
 
+# DBTITLE 1,List All Table in the Selected Databases to Analyze
 db_list = [x.strip() for x in database.split(",") if x != '']
 
 
 tbl_df = spark.sql("show tables in default like 'xxx'")
+
 #Loop through all databases
 for db in spark.sql("show databases").filter(col("databaseName").isin(db_list)).collect():
   #create a dataframe with list of tables from the database
@@ -58,6 +66,7 @@ df.createOrReplaceTempView("all_tables")
 
 # COMMAND ----------
 
+# DBTITLE 1,Get Final List of Tables
 df_tables = spark.sql("""
 SELECT 
 concat(database, '.', tableName) AS fully_qualified_table_name
@@ -72,14 +81,14 @@ print(f"Running Merge Predicate Analysis for: \n {table_list}")
 # COMMAND ----------
 
 spark.sql("""CREATE TABLE IF NOT EXISTS delta_optimizer.merge_predicate_statistics
-(
-TableName STRING,
-TableColumns STRING,
-HasColumnInMergePredicate INTEGER,
-NumberOfVersionsPredicateIsUsed INTEGER,
-AvgMergeRuntimeMs INTEGER,
-UpdateTimestamp TIMESTAMP)
-USING DELTA;
+            (
+            TableName STRING,
+            TableColumns STRING,
+            HasColumnInMergePredicate INTEGER,
+            NumberOfVersionsPredicateIsUsed INTEGER,
+            AvgMergeRuntimeMs INTEGER,
+            UpdateTimestamp TIMESTAMP)
+            USING DELTA;
 """)
 
 # COMMAND ----------
