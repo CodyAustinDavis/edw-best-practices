@@ -5,7 +5,7 @@
 # MAGIC 
 # MAGIC ### RETURNS
 # MAGIC 
-# MAGIC 1. 
+# MAGIC 1. delta_optimizer.write_statistics_merge_predicate
 # MAGIC 
 # MAGIC <b> Dependencies: </b> None
 # MAGIC 
@@ -80,10 +80,14 @@ print(f"Running Merge Predicate Analysis for: \n {table_list}")
 
 # COMMAND ----------
 
-spark.sql("""CREATE TABLE IF NOT EXISTS delta_optimizer.merge_predicate_statistics
+spark.sql("""CREATE DATABASE IF NOT EXISTS delta_optimizer""")
+
+# COMMAND ----------
+
+spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.write_statistics_merge_predicate
             (
             TableName STRING,
-            TableColumns STRING,
+            ColumnName STRING,
             HasColumnInMergePredicate INTEGER,
             NumberOfVersionsPredicateIsUsed INTEGER,
             AvgMergeRuntimeMs INTEGER,
@@ -94,70 +98,107 @@ spark.sql("""CREATE TABLE IF NOT EXISTS delta_optimizer.merge_predicate_statisti
 # COMMAND ----------
 
 # DBTITLE 1,Load Predicate Stats for All Tables in Selected Database
-for tbl in  table_list: 
-  
-  ## Get Transaction log with relevant transactions
-  hist_df = spark.sql(f"""
-  WITH hist AS
-  (DESCRIBE HISTORY {tbl}
-  )
+for tbl in table_list:
+    print(f"Running History Analysis for Table: {tbl}")
+    
+    try: 
+        
+        ## Get Transaction log with relevant transactions
+        hist_df = spark.sql(f"""
+        WITH hist AS
+        (DESCRIBE HISTORY {tbl}
+        )
 
-  SELECT version, timestamp,
-  operationParameters.predicate,
-  operationMetrics.executionTimeMs
-  FROM hist
-  WHERE operation = 'MERGE'
-  ;
-  """)
+        SELECT version, timestamp,
+        operationParameters.predicate,
+        operationMetrics.executionTimeMs
+        FROM hist
+        WHERE operation IN ('MERGE', 'DELETE')
+        ;
+        """)
 
-  hist_df.createOrReplaceTempView("hist_df")
-  
-  ## Get DF of Columns for that table
-  
-  df_cols = [Row(i) for i in spark.sql(f"""SELECT * FROM {tbl}""").columns]
+        hist_df.createOrReplaceTempView("hist_df")
 
-  df = sc.parallelize(df_cols).toDF().withColumnRenamed("_1", "Columns")
+        ## Get DF of Columns for that table
 
-  df.createOrReplaceTempView("df_cols")
-  
-  ## Calculate stats for this table
-  
-  df_stats = (spark.sql("""
-    -- Full Cartesian product small table.. maybe since one table at a time... parallelize later 
-    WITH raw_results AS (
-    SELECT 
-    *,
-    predicate LIKE (concat('%',`Columns`::string,'%')) AS HasColumnInMergePredicate
-    FROM df_cols
-    JOIN hist_df
-    )
+        df_cols = [Row(i) for i in spark.sql(f"""SELECT * FROM {tbl}""").columns]
 
-    SELECT Columns AS TableColumns,
-    CASE WHEN MAX(HasColumnInMergePredicate) = 'true' THEN 1 ELSE 0 END AS HasColumnInMergePredicate,
-    COUNT(DISTINCT CASE WHEN HasColumnInMergePredicate = 'true' THEN `version` ELSE NULL END)::integer AS NumberOfVersionsPredicateIsUsed,
-    AVG(executionTimeMs::integer) AS AvgMergeRuntimeMs
-    FROM raw_results
-    GROUP BY Columns
-    """)
-                .withColumn("TableName", lit(tbl))
-                .withColumn("UpdateTimestamp", current_timestamp())
-                .select("TableName", "TableColumns", "HasColumnInMergePredicate", "NumberOfVersionsPredicateIsUsed", "AvgMergeRuntimeMs", "UpdateTimestamp")
-               )
-  
-  (df_stats.createOrReplaceTempView("source_stats"))
+        df = sc.parallelize(df_cols).toDF().withColumnRenamed("_1", "Columns")
+
+        df.createOrReplaceTempView("df_cols")
+
+        ## Calculate stats for this table
+
+        df_stats = (spark.sql("""
+        -- Full Cartesian product small table.. maybe since one table at a time... parallelize later 
+        WITH raw_results AS (
+        SELECT 
+        *,
+        predicate LIKE (concat('%',`Columns`::string,'%')) AS HasColumnInMergePredicate
+        FROM df_cols
+        JOIN hist_df
+        )
+
+        SELECT Columns AS ColumnName,
+        CASE WHEN MAX(HasColumnInMergePredicate) = 'true' THEN 1 ELSE 0 END AS HasColumnInMergePredicate,
+        COUNT(DISTINCT CASE WHEN HasColumnInMergePredicate = 'true' THEN `version` ELSE NULL END)::integer AS NumberOfVersionsPredicateIsUsed,
+        AVG(executionTimeMs::integer) AS AvgMergeRuntimeMs
+        FROM raw_results
+        GROUP BY Columns
+        """)
+                    .withColumn("TableName", lit(tbl))
+                    .withColumn("UpdateTimestamp", current_timestamp())
+                    .select("TableName", "ColumnName", "HasColumnInMergePredicate", "NumberOfVersionsPredicateIsUsed", "AvgMergeRuntimeMs", "UpdateTimestamp")
+                   )
+
+        (df_stats.createOrReplaceTempView("source_stats"))
+
+        spark.sql("""MERGE INTO delta_optimizer.write_statistics_merge_predicate AS target
+        USING source_stats AS source
+        ON source.TableName = target.TableName AND source.ColumnName = target.ColumnName
+        WHEN MATCHED THEN UPDATE SET * 
+        WHEN NOT MATCHED THEN INSERT *
+        """)
+        
+    except Exception as e:
+        print(f"Skipping analysis for table {tbl} for error: {str(e)}")
+        pass
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC 
-# MAGIC MERGE INTO delta_optimizer.merge_predicate_statistics AS target
-# MAGIC USING source_stats AS source
-# MAGIC ON source.TableName = target.TableName AND source.TableColumns = target.TableColumns
-# MAGIC WHEN MATCHED THEN UPDATE SET * 
-# MAGIC WHEN NOT MATCHED THEN INSERT *
+spark.sql("""CREATE TABLE IF NOT EXISTS delta_optimizer.all_tables_cardinality_stats
+             (TableName STRING,
+             ColumnName STRING,
+             SampleSize INTEGER,
+             TotalCountInSample INTEGER,
+             DistinctCountOfColumnInSample INTEGER,
+             CardinalityProportion FLOAT,
+             IsUsedInReads INTEGER,
+             IsUsedInWrites INTEGER)
+             USING DELTA""")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * FROM delta_optimizer.merge_predicate_statistics ORDER BY UpdateTimestamp DESC
+for tbl in table_list:
+    
+    print(f"Prepping Delta Table Stats: {tbl}")
+    
+    try: 
+        df_cols = [Row(i) for i in spark.sql(f"""SELECT * FROM {tbl}""").columns]
+
+        df = sc.parallelize(df_cols).toDF().withColumnRenamed("_1", "ColumnName").withColumn("TableName", lit(tbl))
+
+        df.createOrReplaceTempView("df_cols")
+        
+        spark.sql("""INSERT INTO delta_optimizer.all_tables_cardinality_stats
+        SELECT TableName, ColumnName, NULL, NULL, NULL, NULL, NULL, NULL FROM df_cols AS source
+        WHERE NOT EXISTS (SELECT 1 FROM delta_optimizer.all_tables_cardinality_stats ss WHERE ss.TableName = source.TableName AND ss.ColumnName = source.ColumnName)
+        """)
+        
+    except Exception as e:
+        print(f"Skipping analysis for table {tbl} for error: {str(e)}")
+        pass
+
+# COMMAND ----------
+
+spark.sql("""OPTIMIZE delta_optimizer.all_tables_cardinality_stats""")

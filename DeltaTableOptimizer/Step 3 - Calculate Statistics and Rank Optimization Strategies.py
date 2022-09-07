@@ -23,97 +23,132 @@
 
 # COMMAND ----------
 
-dbutils.widgets.dropdown("optimizeMethod", "Both", ["Reads", "Writes", "Both"])
-dbutils.widgets.dropdown("numZorderCols", "3", ["1","2","3","4","5"])
-dbutils.widgets.text("Database", "All")
+from pyspark.sql.functions import *
 
 # COMMAND ----------
 
+dbutils.widgets.dropdown("optimizeMethod", "Both", ["Reads", "Writes", "Both"])
+dbutils.widgets.dropdown("numZorderCols", "3", ["1","2","3","4","5"])
+dbutils.widgets.text("Database", "All")
+dbutils.widgets.dropdown("CardinalitySampleSize", "1000000", ["1000", "100000", "1000000", "10000000"])
+
+# COMMAND ----------
+
+cardinalitySampleSize = int(dbutils.widgets.get("CardinalitySampleSize"))
+
+print(f"Cardinality Sample Size: {cardinalitySampleSize}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## Calculate Cardinality Stats on All columns that appear in reads OR writes
+
+# COMMAND ----------
+
+# DBTITLE 1,Build String to efficiently calculate cardinality on a sample
+@udf("string")
+def buildCardinalitySampleSQLStatement(tableName, columnList, sampleSize:float):
+
+
+    sampleString = f"WITH sample AS (SELECT * FROM {tableName} LIMIT {sampleSize})"
+    sqlFrom = f" FROM sample"
+    str2 = [" SELECT COUNT(0) AS TotalCount"]
+
+    for i in columnList:
+        sqlStr = f"COUNT(DISTINCT {i}) AS DistinctCountOf_{i}"
+        str2.append(sqlStr)
+
+
+    finalSql = sampleString + ", ".join(str2) + sqlFrom
+    
+    return finalSql
+
+# COMMAND ----------
+
+# DBTITLE 1,Check and Track Relevant Columns for Cardinality Stats
 # MAGIC %sql
-# MAGIC CREATE OR REPLACE TABLE delta_optimizer.column_level_summary_statistics
-# MAGIC AS
-# MAGIC WITH test_q AS (
-# MAGIC SELECT * FROM delta_optimizer.query_column_statistics
-# MAGIC WHERE length(ColumnName) >= 1 -- filter out queries with no joins or predicates
-# MAGIC AND CASE WHEN "${Database}" != "All" THEN TableName LIKE (CONCAT("${Database}" ,"%")) ELSE true END
-# MAGIC ),
-# MAGIC step_2 AS (
-# MAGIC SELECT 
-# MAGIC TableName,
-# MAGIC ColumnName,
-# MAGIC COUNT(DISTINCT query_id) AS QueryReferenceCount,
-# MAGIC SUM(DurationTimesRuns) AS RawTotalRuntime,
-# MAGIC AVG(AverageQueryDuration) AS AvgQueryDuration,
-# MAGIC SUM(NumberOfColumnOccurrences) AS TotalColumnOccurrencesForAllQueries,
-# MAGIC AVG(NumberOfColumnOccurrences) AS AvgColumnOccurrencesInQueryies
-# MAGIC FROM test_q
-# MAGIC WHERE length(ColumnName) >=1
-# MAGIC GROUP BY TableName, ColumnName
-# MAGIC )
-# MAGIC SELECT 
-# MAGIC *
-# MAGIC FROM step_2
-# MAGIC ;
+# MAGIC 
+# MAGIC  WITH filter_cols AS (
+# MAGIC     SELECT DISTINCT
+# MAGIC     spine.TableName,
+# MAGIC     spine.ColumnName,
+# MAGIC     CASE WHEN reads.QueryReferenceCount >= 1 THEN 1 ELSE 0 END AS IsUsedInReads,
+# MAGIC     CASE WHEN writes.HasColumnInMergePredicate >= 1 THEN 1 ELSE 0 END AS IsUsedInWrites
+# MAGIC     FROM delta_optimizer.all_tables_cardinality_stats AS spine
+# MAGIC     LEFT JOIN delta_optimizer.read_statistics_scaled_results reads ON spine.TableName = reads.TableName AND spine.ColumnName = reads.ColumnName
+# MAGIC     LEFT JOIN delta_optimizer.write_statistics_merge_predicate writes ON spine.TableName = writes.TableName AND spine.ColumnName = writes.ColumnName
+# MAGIC     )
+# MAGIC MERGE INTO delta_optimizer.all_tables_cardinality_stats AS target
+# MAGIC USING filter_cols AS source ON source.TableName = target.TableName AND source.ColumnName = target.ColumnName
+# MAGIC WHEN MATCHED THEN UPDATE SET
+# MAGIC target.IsUsedInReads = source.IsUsedInReads,
+# MAGIC target.IsUsedInWrites = source.IsUsedInWrites
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC SELECT * FROM delta_optimizer.column_level_summary_statistics
+# MAGIC SELECT * FROM delta_optimizer.all_tables_cardinality_stats
 
 # COMMAND ----------
 
-# DBTITLE 1,Min Max Normalization by Table
-from pyspark.sql.functions import *
-
-## This is the process for EACH table
-df = spark.sql("""SELECT * FROM delta_optimizer.column_level_summary_statistics""")
-
-columns_to_scale = ["QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies"]
-min_exprs = {x: "min" for x in columns_to_scale}
-max_exprs = {x: "max" for x in columns_to_scale}
-
-## Apply basic min max scaling by table for now
-
-dfmin = df.groupBy("TableName").agg(min_exprs)
-dfmax = df.groupBy("TableName").agg(max_exprs)
-
-df_boundaries = dfmin.join(dfmax, on="TableName", how="inner")
-
-df_pre_scaled = df.join(df_boundaries, on="TableName", how="inner")
-
-df_scaled = (df_pre_scaled
-         .withColumn("QueryRefernceCountScaled", coalesce((col("QueryReferenceCount") - col("min(QueryReferenceCount)"))/(col("max(QueryReferenceCount)") - col("min(QueryReferenceCount)")), lit(0)))
-         .withColumn("RawTotalRuntimeScaled", coalesce((col("RawTotalRuntime") - col("min(RawTotalRuntime)"))/(col("max(RawTotalRuntime)") - col("min(RawTotalRuntime)")), lit(0)))
-         .withColumn("AvgQueryDurationScaled", coalesce((col("AvgQueryDuration") - col("min(AvgQueryDuration)"))/(col("max(AvgQueryDuration)") - col("min(AvgQueryDuration)")), lit(0)))
-         .withColumn("TotalColumnOccurrencesForAllQueriesScaled", coalesce((col("TotalColumnOccurrencesForAllQueries") - col("min(TotalColumnOccurrencesForAllQueries)"))/(col("max(TotalColumnOccurrencesForAllQueries)") - col("min(TotalColumnOccurrencesForAllQueries)")), lit(0)))
-         .withColumn("AvgColumnOccurrencesInQueriesScaled", coalesce((col("AvgColumnOccurrencesInQueryies") - col("min(AvgColumnOccurrencesInQueryies)"))/(col("max(AvgColumnOccurrencesInQueryies)") - col("min(AvgColumnOccurrencesInQueryies)")), lit(0)))
-            )
-
-display(df_scaled)
+df_cardinality = (
+    spark.sql("""
+        SELECT TableName, collect_list(ColumnName) AS ColumnList
+        FROM delta_optimizer.all_tables_cardinality_stats
+        WHERE (IsUsedInReads > 0 OR IsUsedInWrites > 0) --If columns is not used in any joins or predicates, lets not do cardinality stats
+        GROUP BY TableName
+    """)
+    .withColumn("cardinalityStatsStatement", buildCardinalitySampleSQLStatement(col("TableName"), col("ColumnList"), lit(cardinalitySampleSize))) # Take sample size of 1M, if table is smaller, index on the count
+)
 
 # COMMAND ----------
 
-"""
-def scale_columns_by_table(df):
-  
-  columns_to_scale = ["QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies"]
-  assemblers = [VectorAssembler(inputCols=[col], outputCol=col + "_vec") for col in columns_to_scale]
-  scalers = [RobustScaler(inputCol=col + "_vec", outputCol=col + "_scaled") for col in columns_to_scale]
-  pipeline = Pipeline(stages=assemblers + scalers)
-  scalerModel = pipeline.fit(df)
-  scaledData = scalerModel.transform(df)
-  
-  return scaledData
-"""
+# MAGIC %md
+# MAGIC <b> Parse Cardinality Stats
 
 # COMMAND ----------
 
-df_scaled.createOrReplaceTempView("scaled_results")
+cardinality_statement = df_cardinality.collect()
+cardinality_config = {i[0]: {"columns": i[1], "sql": i[2]} for i in cardinality_statement}
 
 # COMMAND ----------
 
-### Final ranking steps
+# DBTITLE 1,Build Cardinality Stats for All Tables Where columns are used in read or write predicates
+for i in cardinality_config:
+    try:
+        
+        print(f"Building Cardinality Statistics for {i} ... \n")
+        
+        wide_df = (spark.sql(cardinality_config.get(i).get("sql")))
+        table_name = i
+        clean_list = [ "'" + re.search('[^_]*_(.*)', i).group(1) + "'" + ", " + i for i in wide_df.columns if re.search('[^_]*_(.*)', i) is not None]
+        clean_expr = ", ".join(clean_list)
+        unpivot_Expr = f"stack({len(clean_list)}, {clean_expr}) as (ColumnName,ColumnDistinctCount)"	
+
+        unpivot_DataFrame = wide_df.select(expr(unpivot_Expr), "TotalCount").withColumn("TableName", lit(table_name))
+
+
+        unpivot_DataFrame.createOrReplaceTempView("card_stats")
+
+        spark.sql(f"""
+            MERGE INTO delta_optimizer.all_tables_cardinality_stats AS target 
+            USING card_stats AS source ON source.TableName = target.TableName AND source.ColumnName = target.ColumnName
+            WHEN MATCHED THEN UPDATE SET
+            target.SampleSize = CAST({cardinalitySampleSize} AS INTEGER),
+            target.TotalCountInSample = source.TotalCount,
+            target.DistinctCountOfColumnInSample = source.ColumnDistinctCount,
+            target.CardinalityProportion = (CAST(ColumnDistinctCount AS DOUBLE) / CAST(TotalCount AS DOUBLE))
+        """)
+        
+    except Exception as e:
+        print(f"Skipping table {i} due to error {str(e)}")
+        pass
+
+# COMMAND ----------
+
+""### Final ranking steps
 
 ## Calculate multiplied aggregate weighted score
 ## Normalized into Percentile
@@ -131,15 +166,15 @@ df_scaled.createOrReplaceTempView("scaled_results")
 # MAGIC WITH final_stats AS (
 # MAGIC SELECT
 # MAGIC COALESCE(reads.TableName, writes.TableName) AS TableName,
-# MAGIC COALESCE(reads.ColumnName, writes.TableColumns) AS ColumnName,
+# MAGIC COALESCE(reads.ColumnName, writes.ColumnName) AS ColumnName,
 # MAGIC QueryRefernceCountScaled,
 # MAGIC RawTotalRuntimeScaled,
 # MAGIC AvgQueryDurationScaled,
 # MAGIC TotalColumnOccurrencesForAllQueriesScaled,
 # MAGIC AvgColumnOccurrencesInQueriesScaled,
 # MAGIC COALESCE(HasColumnInMergePredicate, 0) AS HasColumnInMergePredicate -- Not all tables will be MERGE targets
-# MAGIC FROM scaled_results AS reads 
-# MAGIC LEFT JOIN delta_optimizer.merge_predicate_statistics AS writes ON writes.TableName = reads.TableName AND writes.TableColumns = reads.ColumnName
+# MAGIC FROM delta_optimizer.read_statistics_scaled_results AS reads 
+# MAGIC LEFT JOIN delta_optimizer.write_statistics_merge_predicate AS writes ON writes.TableName = reads.TableName AND writes.ColumnName = reads.ColumnName
 # MAGIC ),
 # MAGIC raw_scoring AS (
 # MAGIC SELECT 

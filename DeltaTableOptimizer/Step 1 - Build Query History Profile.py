@@ -86,7 +86,7 @@ requestString = {
 "start_time_ms": start_ts_ms
 },
 "statuses": [
-"FINISHED"
+"FINISHED", "CANCELED"
 ],
 "warehouse_ids": warehouseIdsList
 },
@@ -212,7 +212,7 @@ raw_queries_df.createOrReplaceTempView("raw")
 # MAGIC     COUNT(*) AS TotalQueryRuns,
 # MAGIC     AVG(duration)*COUNT(*) AS DurationTimesRuns
 # MAGIC     FROM delta_optimizer.raw_query_history_statistics
-# MAGIC     WHERE status = 'FINISHED'
+# MAGIC     WHERE status IN('FINISHED', 'CANCELED')
 # MAGIC     AND statement_type = 'SELECT'
 # MAGIC     GROUP BY query_id
 # MAGIC   )
@@ -232,47 +232,46 @@ import re
 
 @udf("string")
 def getPotentialJoinedColumns(sqlString):
-  parsed = sqlparse.parse(sqlString)[0]
-  sqlParts = parsed.tokens
+    parsed = sqlparse.parse(sqlString)[0]
+    sqlParts = parsed.tokens
 
-  y = sqlparse.sql.IdentifierList(sqlParts)
-  z = [i for i in y if len(str(i)) > 2]
+    y = sqlparse.sql.IdentifierList(sqlParts)
+    z = [i for i in y if len(str(i)) > 2]
 
-  ylist = list([i for i in z])
+    ylist = list([i for i in z])
 
-  table_tree_obj = {}
+    table_tree_obj = {}
 
-  ## Get tables for joins
-  for i,k in enumerate(ylist):
-    ss = str(k)
+    ## Get tables for joins
+    for i,k in enumerate(ylist):
+        ss = str(k)
 
-    if str(k.ttype) == 'Token.Keyword' and (str(k.value).find('FROM') >= 0 or (str(k.value).find('JOIN') >= 0)):
+        if str(k.ttype) == 'Token.Keyword' and (str(k.value).find('FROM') >= 0 or (str(k.value).find('JOIN') >= 0) or (str(k.value).find('WHERE') >= 0)):
 
-      try:
+            try:
 
-        table_tree_obj[re.split('[ AS]', str(z[i+1]))[0]] = {"JoinedColumns":[]}
-        ## Get comparisons
-        comp = z[i+2]
+                table_tree_obj[re.split('[ AS]', str(z[i+1]))[0]] = {"JoinedColumns":[]}
+                ## Get comparisons
+                comp = z[i+2]
 
-        if str(comp.ttype) == 'Token.Comparison' or (comp.ttype is None):
-          try:
-            #print(f" There is a Comparison here! at {i+2} --> {z[i+2]}")
+                if str(comp.ttype) == 'Token.Comparison' or (comp.ttype is None):
+                    try:
+                        #print(f" There is a Comparison here! at {i+2} --> {z[i+2]}")
 
-            comp_str = str(z[i+2])
-            parsed_cols = list(set([(i[i.find(".")+1:]).strip() for i in re.split('[=|<|>|OR|AND]', comp_str) if len(i)>= 1]))
+                        comp_str = str(z[i+2])
+                        parsed_cols = list(set([(i[i.find(".")+1:]).strip() for i in re.split('[=|<|>|OR|AND]', comp_str) if len(i)>= 1]))
 
-            #print(parsed_cols)
-            table_tree_obj[re.split('[ AS]', str(z[i+1]))[0]]["JoinedColumns"] = parsed_cols
+                        #print(parsed_cols)
+                        table_tree_obj[re.split('[ AS]', str(z[i+1]))[0]]["JoinedColumns"] = parsed_cols
 
-          except:
-            pass      
+                    except:
+                        pass      
 
-      except:
-        pass
+            except:
+                pass
 
 
-  return table_tree_obj
-
+    return table_tree_obj
 
 # COMMAND ----------
 
@@ -405,3 +404,64 @@ df_profiled.write.format("delta").saveAsTable("delta_optimizer.parsed_distinct_q
 # MAGIC 
 # MAGIC SELECT * 
 # MAGIC FROM delta_optimizer.query_column_statistics
+
+# COMMAND ----------
+
+spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.read_statistics_column_level_summary
+AS
+WITH test_q AS (
+SELECT * FROM delta_optimizer.query_column_statistics
+WHERE length(ColumnName) >= 1 -- filter out queries with no joins or predicates
+AND CASE WHEN "${Database}" != "All" THEN TableName LIKE (CONCAT("${Database}" ,"%")) ELSE true END
+),
+step_2 AS (
+SELECT 
+TableName,
+ColumnName,
+COUNT(DISTINCT query_id) AS QueryReferenceCount,
+SUM(DurationTimesRuns) AS RawTotalRuntime,
+AVG(AverageQueryDuration) AS AvgQueryDuration,
+SUM(NumberOfColumnOccurrences) AS TotalColumnOccurrencesForAllQueries,
+AVG(NumberOfColumnOccurrences) AS AvgColumnOccurrencesInQueryies
+FROM test_q
+WHERE length(ColumnName) >=1
+GROUP BY TableName, ColumnName
+)
+SELECT 
+*
+FROM step_2
+; """)
+
+# COMMAND ----------
+
+from pyspark.sql.functions import *
+
+## This is the process for EACH table
+df = spark.sql("""SELECT * FROM delta_optimizer.read_statistics_column_level_summary""")
+
+columns_to_scale = ["QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies"]
+min_exprs = {x: "min" for x in columns_to_scale}
+max_exprs = {x: "max" for x in columns_to_scale}
+
+## Apply basic min max scaling by table for now
+
+dfmin = df.groupBy("TableName").agg(min_exprs)
+dfmax = df.groupBy("TableName").agg(max_exprs)
+
+df_boundaries = dfmin.join(dfmax, on="TableName", how="inner")
+
+df_pre_scaled = df.join(df_boundaries, on="TableName", how="inner")
+
+df_scaled = (df_pre_scaled
+         .withColumn("QueryReferenceCountScaled", coalesce((col("QueryReferenceCount") - col("min(QueryReferenceCount)"))/(col("max(QueryReferenceCount)") - col("min(QueryReferenceCount)")), lit(0)))
+         .withColumn("RawTotalRuntimeScaled", coalesce((col("RawTotalRuntime") - col("min(RawTotalRuntime)"))/(col("max(RawTotalRuntime)") - col("min(RawTotalRuntime)")), lit(0)))
+         .withColumn("AvgQueryDurationScaled", coalesce((col("AvgQueryDuration") - col("min(AvgQueryDuration)"))/(col("max(AvgQueryDuration)") - col("min(AvgQueryDuration)")), lit(0)))
+         .withColumn("TotalColumnOccurrencesForAllQueriesScaled", coalesce((col("TotalColumnOccurrencesForAllQueries") - col("min(TotalColumnOccurrencesForAllQueries)"))/(col("max(TotalColumnOccurrencesForAllQueries)") - col("min(TotalColumnOccurrencesForAllQueries)")), lit(0)))
+         .withColumn("AvgColumnOccurrencesInQueriesScaled", coalesce((col("AvgColumnOccurrencesInQueryies") - col("min(AvgColumnOccurrencesInQueryies)"))/(col("max(AvgColumnOccurrencesInQueryies)") - col("min(AvgColumnOccurrencesInQueryies)")), lit(0)))
+         .selectExpr("TableName", "ColumnName", "QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies", "QueryReferenceCountScaled", "RawTotalRuntimeScaled", "AvgQueryDurationScaled", "TotalColumnOccurrencesForAllQueriesScaled", "AvgColumnOccurrencesInQueriesScaled")
+            )
+
+
+# COMMAND ----------
+
+df_scaled.write.mode("overwrite").saveAsTable("delta_optimizer.read_statistics_scaled_results")
