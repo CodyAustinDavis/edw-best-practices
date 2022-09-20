@@ -21,18 +21,17 @@
 # MAGIC <li> 1. Enable parsing of queries from not just DBSQL, but ALL clusters (jobs/AP)
 # MAGIC <li> 2. Enable parameter selection for specifying specific (1 or many) databases to scrape
 # MAGIC <li> 3. Enable pointing to a Git location to parse SQL files with SELECT statements in GIT
-# MAGIC </li>
 # MAGIC 
 # MAGIC #### Transaction Log Statistics: 
 # MAGIC 
-# MAGIC <li> 1. Add cardinality statistics to starts estimating potential efficacy of ZORDER on a MERGE predicate
+# MAGIC <li> 1. Add partition filtering and file size managemnt
 # MAGIC   
 # MAGIC </li>
 # MAGIC 
 # MAGIC #### Ranking Statistics Algorithm:
 # MAGIC 
 # MAGIC <li> 1. More robust standard scaling for statistics (right now its 0-1 standard scaling partitioned by TABLE)
-# MAGIC <li> 2. Add Cardinality metric to weight rank in scaling (higher cardinality should get weighted more even if slightly lower on runtime/occurence)
+# MAGIC <li> 2. Standard scale Cardinality metric to weight rank in scaling (higher cardinality should get weighted more even if slightly lower on runtime/occurence)
 # MAGIC <li> 3. Make ranking system more intelligent - open ended feedback needed for ideas on making ranking system more generalizable and nuanced
 # MAGIC <li> 4. Dynamically prune for the actual number of ZORDER columns to best used (dependant first on cardinality). Do this possibly by tracking distance between certain statistics (i.e. if ColA appears 3000 times and Col B appears 2900 times, use both, but if ColA appears 3000 times but ColB appears 3 times, only use ColA)
 # MAGIC 

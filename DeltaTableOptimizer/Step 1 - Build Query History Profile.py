@@ -80,18 +80,18 @@ print(f"Getting Query History to parse from period: {start_timestamp} to {end_ti
 
 # DBTITLE 1,Build Dynamic Request
 requestString = {
-"filter_by": {
-  "query_start_time_range": {
-"end_time_ms": end_ts_ms,
-"start_time_ms": start_ts_ms
-},
-"statuses": [
-"FINISHED", "CANCELED"
-],
-"warehouse_ids": warehouseIdsList
-},
-"include_metrics": "true",
-"max_results": "1000"
+    "filter_by": {
+      "query_start_time_range": {
+      "end_time_ms": end_ts_ms,
+        "start_time_ms": start_ts_ms
+    },
+    "statuses": [
+        "FINISHED", "CANCELED"
+    ],
+    "warehouse_ids": warehouseIdsList
+    },
+    "include_metrics": "true",
+    "max_results": "1000"
 }
 
 ## Convert dict to json
@@ -167,115 +167,58 @@ raw_queries_df.createOrReplaceTempView("raw")
 # COMMAND ----------
 
 # DBTITLE 1,Create Database to Store Results
-# MAGIC %sql
-# MAGIC 
-# MAGIC CREATE DATABASE IF NOT EXISTS delta_optimizer;
+spark.sql("""CREATE DATABASE IF NOT EXISTS delta_optimizer;""")
 
 # COMMAND ----------
 
 # DBTITLE 1,Parse Reponse for Columns we need to calculate statistics
-# MAGIC %sql
-# MAGIC CREATE OR REPLACE TABLE delta_optimizer.raw_query_history_statistics
-# MAGIC AS
-# MAGIC SELECT
-# MAGIC query_id,
-# MAGIC query_start_time_ms,
-# MAGIC query_end_time_ms,
-# MAGIC duration,
-# MAGIC query_text,
-# MAGIC status,
-# MAGIC statement_type,
-# MAGIC rows_produced,
-# MAGIC metrics
-# MAGIC FROM raw
-# MAGIC WHERE statement_type = 'SELECT';
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * FROM delta_optimizer.raw_query_history_statistics
+spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.raw_query_history_statistics
+AS
+SELECT
+query_id,
+query_start_time_ms,
+query_end_time_ms,
+duration,
+query_text,
+status,
+statement_type,
+rows_produced,
+metrics
+FROM raw
+WHERE statement_type = 'SELECT';
+""")
 
 # COMMAND ----------
 
 # DBTITLE 1,Calculate Summary Statistics
-# MAGIC %sql
-# MAGIC 
-# MAGIC --Calculate Query Statistics to get importance Rank by Query (duration, rows_returned)
-# MAGIC 
-# MAGIC CREATE OR REPLACE TABLE delta_optimizer.query_summary_statistics
-# MAGIC AS (
-# MAGIC   WITH raw_query_stats AS (
-# MAGIC     SELECT query_id,
-# MAGIC     AVG(duration) AS AverageQueryDuration,
-# MAGIC     AVG(rows_produced) AS AverageRowsProduced,
-# MAGIC     COUNT(*) AS TotalQueryRuns,
-# MAGIC     AVG(duration)*COUNT(*) AS DurationTimesRuns
-# MAGIC     FROM delta_optimizer.raw_query_history_statistics
-# MAGIC     WHERE status IN('FINISHED', 'CANCELED')
-# MAGIC     AND statement_type = 'SELECT'
-# MAGIC     GROUP BY query_id
-# MAGIC   )
-# MAGIC   SELECT 
-# MAGIC   *
-# MAGIC   FROM raw_query_stats
-# MAGIC )
+spark.sql("""
+--Calculate Query Statistics to get importance Rank by Query (duration, rows_returned)
 
-# COMMAND ----------
+CREATE OR REPLACE TABLE delta_optimizer.query_summary_statistics
+AS (
+  WITH raw_query_stats AS (
+    SELECT query_id,
+    AVG(duration) AS AverageQueryDuration,
+    AVG(rows_produced) AS AverageRowsProduced,
+    COUNT(*) AS TotalQueryRuns,
+    AVG(duration)*COUNT(*) AS DurationTimesRuns
+    FROM delta_optimizer.raw_query_history_statistics
+    WHERE status IN('FINISHED', 'CANCELED')
+    AND statement_type = 'SELECT'
+    GROUP BY query_id
+  )
+  SELECT 
+  *
+  FROM raw_query_stats
+)
 
-# DBTITLE 1,v1 -DEPRECATED - The hard way - UDF to parse query tree and get list of columns used in joins and filters
-import sqlparse
-import re
-## This function parses a SQL string a returns a list of tables with potential columnsed used to join
-
-## TO DO: add functionality for getting columns used to filter with WHERE/ORDER -- requires aliases or just lots of extra columns
-
-@udf("string")
-def getPotentialJoinedColumns(sqlString):
-    parsed = sqlparse.parse(sqlString)[0]
-    sqlParts = parsed.tokens
-
-    y = sqlparse.sql.IdentifierList(sqlParts)
-    z = [i for i in y if len(str(i)) > 2]
-
-    ylist = list([i for i in z])
-
-    table_tree_obj = {}
-
-    ## Get tables for joins
-    for i,k in enumerate(ylist):
-        ss = str(k)
-
-        if str(k.ttype) == 'Token.Keyword' and (str(k.value).find('FROM') >= 0 or (str(k.value).find('JOIN') >= 0) or (str(k.value).find('WHERE') >= 0)):
-
-            try:
-
-                table_tree_obj[re.split('[ AS]', str(z[i+1]))[0]] = {"JoinedColumns":[]}
-                ## Get comparisons
-                comp = z[i+2]
-
-                if str(comp.ttype) == 'Token.Comparison' or (comp.ttype is None):
-                    try:
-                        #print(f" There is a Comparison here! at {i+2} --> {z[i+2]}")
-
-                        comp_str = str(z[i+2])
-                        parsed_cols = list(set([(i[i.find(".")+1:]).strip() for i in re.split('[=|<|>|OR|AND]', comp_str) if len(i)>= 1]))
-
-                        #print(parsed_cols)
-                        table_tree_obj[re.split('[ AS]', str(z[i+1]))[0]]["JoinedColumns"] = parsed_cols
-
-                    except:
-                        pass      
-
-            except:
-                pass
-
-
-    return table_tree_obj
+""")
 
 # COMMAND ----------
 
 # DBTITLE 1,Parse SQL Tree for filtered columns and table map
+## Input Filter Type can be : where, join, group_by
+
 @udf("array<string>")
 def getParsedFilteredColumnsinSQL(sqlString):
   
@@ -291,6 +234,7 @@ def getParsedFilteredColumnsinSQL(sqlString):
     try:
       final_columns.append(results.columns_dict.get("where"))
       final_columns.append(results.columns_dict.get("join"))
+      final_columns.append(results.columns_dict.get("group_by"))
 
     except:
       for tbl in results.tables:
@@ -345,65 +289,105 @@ def getParsedFilteredColumnsinSQL(sqlString):
 
 # COMMAND ----------
 
-df = spark.sql("""SELECT DISTINCT query_id, query_text 
-                  FROM delta_optimizer.raw_query_history_statistics
-                  WHERE statement_type = 'SELECT'""")
+# DBTITLE 1,Helper functions to differentiate how columns are used (important for stats and Zorder)
+@udf("integer")
+def checkIfJoinColumn(sqlString, columnName):
+    try: 
+        results = Parser(sqlString)
 
-df.display()
+        ## If just a select, then skip this and just return the table
+        if columnName in results.columns_dict.get("join"):
+            return 1
+        else:
+            return 0
+
+    except:
+        return 0
+    
+    
+    
+@udf("integer")
+def checkIfFilterColumn(sqlString, columnName):
+    try: 
+        results = Parser(sqlString)
+
+        ## If just a select, then skip this and just return the table
+        if columnName in results.columns_dict.get("where"):
+            return 1
+        else:
+            return 0
+
+    except:
+        return 0
+    
+    
+@udf("integer")
+def checkIfGroupColumn(sqlString, columnName):
+    try: 
+        results = Parser(sqlString)
+
+        ## If just a select, then skip this and just return the table
+        if columnName in results.columns_dict.get("group_by"):
+            return 1
+        else:
+            return 0
+
+    except:
+        return 0
+
+# COMMAND ----------
+
+spark.sql("""DROP TABLE IF EXISTS delta_optimizer.parsed_distinct_queries""")
 
 # COMMAND ----------
 
 # DBTITLE 1,Use Udf To Parse Query Text
-df_profiled = df.withColumn("profiled_columns", getParsedFilteredColumnsinSQL(F.col("query_text")))
-
+df_profiled_where = (df.withColumn("profiled_columns", getParsedFilteredColumnsinSQL(F.col("query_text")))
+                    )
 #df_profiled.createOrReplaceTempView("parsed")
 
-spark.sql("""DROP TABLE IF EXISTS delta_optimizer.parsed_distinct_queries""")
-
-df_profiled.write.format("delta").saveAsTable("delta_optimizer.parsed_distinct_queries")
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * FROM delta_optimizer.parsed_distinct_queries
+df_profiled_where.write.format("delta").saveAsTable("delta_optimizer.parsed_distinct_queries")
 
 # COMMAND ----------
 
 # DBTITLE 1,Calculate Statistics
-# MAGIC %sql
-# MAGIC 
-# MAGIC -- OUTPUT: table with table_name, column_name, # query filter references, # total execution referencing, # avg duration of query when referenced
-# MAGIC 
-# MAGIC CREATE OR REPLACE TABLE delta_optimizer.query_column_statistics
-# MAGIC AS (
-# MAGIC   WITH exploded_parsed_cols AS (SELECT DISTINCT
-# MAGIC   explode(profiled_columns) AS explodedCols,
-# MAGIC   query_id,
-# MAGIC   query_text
-# MAGIC   FROM delta_optimizer.parsed_distinct_queries
-# MAGIC   ),
-# MAGIC 
-# MAGIC   step_2 AS (SELECT DISTINCT
-# MAGIC   split(explodedCols, ":")[0] AS TableName,
-# MAGIC   split(explodedCols, ":")[1] AS ColumnName,
-# MAGIC   root.query_text,
-# MAGIC   hist.*
-# MAGIC   FROM exploded_parsed_cols AS root
-# MAGIC   LEFT JOIN delta_optimizer.query_summary_statistics AS hist USING (query_id)--SELECT statements only included
-# MAGIC   )
-# MAGIC   
-# MAGIC   SELECT *,
-# MAGIC   size(split(query_text, ColumnName)) - 1 AS NumberOfColumnOccurrences
-# MAGIC   FROM step_2
-# MAGIC )
 
-# COMMAND ----------
+# OUTPUT: table with table_name, column_name, # query filter references, # total execution referencing, # avg duration of query when referenced
 
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * 
-# MAGIC FROM delta_optimizer.query_column_statistics
+pre_stats_df = (spark.sql("""
+  WITH exploded_parsed_cols AS (SELECT DISTINCT
+  explode(profiled_columns) AS explodedCols,
+  query_id,
+  query_text
+  FROM delta_optimizer.parsed_distinct_queries
+  ),
+
+  step_2 AS (SELECT DISTINCT
+  split(explodedCols, ":")[0] AS TableName,
+  split(explodedCols, ":")[1] AS ColumnName,
+  root.query_text,
+  hist.*
+  FROM exploded_parsed_cols AS root
+  LEFT JOIN delta_optimizer.query_summary_statistics AS hist USING (query_id)--SELECT statements only included
+  )
+  
+  SELECT *,
+  size(split(query_text, ColumnName)) - 1 AS NumberOfColumnOccurrences
+  FROM step_2
+""")
+.withColumn("isUsedInJoin", checkIfJoinColumn(F.col("query_text"), F.concat(F.col("TableName"), F.lit("."), F.col("ColumnName"))))
+.withColumn("isUsedInFilter", checkIfFilterColumn(F.col("query_text"), F.concat(F.col("TableName"), F.lit("."), F.col("ColumnName"))))
+.withColumn("isUsedInGroup", checkIfGroupColumn(F.col("query_text"), F.concat(F.col("TableName"), F.lit("."), F.col("ColumnName"))))
+)
+               
+pre_stats_df.createOrReplaceTempView("withUseFlags")
+
+spark.sql("""
+CREATE OR REPLACE TABLE delta_optimizer.query_column_statistics
+AS (
+SELECT * FROM withUseFlags
+)
+""")
 
 # COMMAND ----------
 
@@ -418,6 +402,12 @@ step_2 AS (
 SELECT 
 TableName,
 ColumnName,
+MAX(isUsedInJoin) AS isUsedInJoin,
+MAX(isUsedInFilter) AS isUsedInFilter,
+MAX(isUsedInGroup) AS isUsedInGroup,
+SUM(isUsedInJoin) AS NumberOfQueriesUsedInJoin,
+SUM(isUsedInFilter) AS NumberOfQueriesUsedInFilter,
+SUM(isUsedInGroup) AS NumberOfQueriesUsedInGroup,
 COUNT(DISTINCT query_id) AS QueryReferenceCount,
 SUM(DurationTimesRuns) AS RawTotalRuntime,
 AVG(AverageQueryDuration) AS AvgQueryDuration,
@@ -458,10 +448,12 @@ df_scaled = (df_pre_scaled
          .withColumn("AvgQueryDurationScaled", coalesce((col("AvgQueryDuration") - col("min(AvgQueryDuration)"))/(col("max(AvgQueryDuration)") - col("min(AvgQueryDuration)")), lit(0)))
          .withColumn("TotalColumnOccurrencesForAllQueriesScaled", coalesce((col("TotalColumnOccurrencesForAllQueries") - col("min(TotalColumnOccurrencesForAllQueries)"))/(col("max(TotalColumnOccurrencesForAllQueries)") - col("min(TotalColumnOccurrencesForAllQueries)")), lit(0)))
          .withColumn("AvgColumnOccurrencesInQueriesScaled", coalesce((col("AvgColumnOccurrencesInQueryies") - col("min(AvgColumnOccurrencesInQueryies)"))/(col("max(AvgColumnOccurrencesInQueryies)") - col("min(AvgColumnOccurrencesInQueryies)")), lit(0)))
-         .selectExpr("TableName", "ColumnName", "QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies", "QueryReferenceCountScaled", "RawTotalRuntimeScaled", "AvgQueryDurationScaled", "TotalColumnOccurrencesForAllQueriesScaled", "AvgColumnOccurrencesInQueriesScaled")
+         .selectExpr("TableName", "ColumnName", "isUsedInJoin", "isUsedInFilter","isUsedInGroup","NumberOfQueriesUsedInJoin","NumberOfQueriesUsedInFilter","NumberOfQueriesUsedInGroup","QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies", "QueryReferenceCountScaled", "RawTotalRuntimeScaled", "AvgQueryDurationScaled", "TotalColumnOccurrencesForAllQueriesScaled", "AvgColumnOccurrencesInQueriesScaled")
             )
 
 
 # COMMAND ----------
 
-df_scaled.write.mode("overwrite").saveAsTable("delta_optimizer.read_statistics_scaled_results")
+df_scaled.createOrReplaceTempView("final_scaled_reads")
+
+spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.read_statistics_scaled_results AS SELECT * FROM final_scaled_reads""")

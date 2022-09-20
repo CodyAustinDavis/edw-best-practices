@@ -14,13 +14,13 @@
 # MAGIC <li> 1. Get Size of Table to set file size 
 # MAGIC <li> 2. Get Size of table to decide how often and which columns to collect stats on
 # MAGIC <li> 3. If there is a MERGE predicate, create DDL to tune file sizes for re-writes automatically
+# MAGIC <li> 4. If there is a partition predicate, do NOT ZORDER on that same predicate (push weight to 0 automatically)
 
 # COMMAND ----------
 
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql import Row
-
 
 # COMMAND ----------
 
@@ -68,11 +68,10 @@ df.createOrReplaceTempView("all_tables")
 
 # DBTITLE 1,Get Final List of Tables
 df_tables = spark.sql("""
-SELECT 
-concat(database, '.', tableName) AS fully_qualified_table_name
-FROM all_tables
+  SELECT 
+  concat(database, '.', tableName) AS fully_qualified_table_name
+  FROM all_tables
 """).collect()
-
 
 table_list = [i[0] for i in df_tables]
 
@@ -94,6 +93,21 @@ spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.write_statistics_merge_pred
             UpdateTimestamp TIMESTAMP)
             USING DELTA;
 """)
+
+# COMMAND ----------
+
+fileSizeMap = {1: "32mb",
+              }
+
+# COMMAND ----------
+
+df = (spark.sql("""DESCRIBE DETAIL detection.viewing_content_firehose""")
+            .selectExpr("name", "sizeInBytes", "sizeInBytes/(1024*1024*1024) AS sizeInGB", "partitionColumns")
+     )
+
+display(df)
+## New rules to add, if column in partitionColumns, bring weight to 0 (multiply whole equation by 0)
+
 
 # COMMAND ----------
 
@@ -146,10 +160,10 @@ for tbl in table_list:
         FROM raw_results
         GROUP BY Columns
         """)
-                    .withColumn("TableName", lit(tbl))
-                    .withColumn("UpdateTimestamp", current_timestamp())
-                    .select("TableName", "ColumnName", "HasColumnInMergePredicate", "NumberOfVersionsPredicateIsUsed", "AvgMergeRuntimeMs", "UpdateTimestamp")
-                   )
+          .withColumn("TableName", lit(tbl))
+          .withColumn("UpdateTimestamp", current_timestamp())
+          .select("TableName", "ColumnName", "HasColumnInMergePredicate", "NumberOfVersionsPredicateIsUsed", "AvgMergeRuntimeMs", "UpdateTimestamp")
+         )
 
         (df_stats.createOrReplaceTempView("source_stats"))
 

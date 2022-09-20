@@ -67,29 +67,28 @@ def buildCardinalitySampleSQLStatement(tableName, columnList, sampleSize:float):
 # COMMAND ----------
 
 # DBTITLE 1,Check and Track Relevant Columns for Cardinality Stats
-# MAGIC %sql
-# MAGIC 
-# MAGIC  WITH filter_cols AS (
-# MAGIC     SELECT DISTINCT
-# MAGIC     spine.TableName,
-# MAGIC     spine.ColumnName,
-# MAGIC     CASE WHEN reads.QueryReferenceCount >= 1 THEN 1 ELSE 0 END AS IsUsedInReads,
-# MAGIC     CASE WHEN writes.HasColumnInMergePredicate >= 1 THEN 1 ELSE 0 END AS IsUsedInWrites
-# MAGIC     FROM delta_optimizer.all_tables_cardinality_stats AS spine
-# MAGIC     LEFT JOIN delta_optimizer.read_statistics_scaled_results reads ON spine.TableName = reads.TableName AND spine.ColumnName = reads.ColumnName
-# MAGIC     LEFT JOIN delta_optimizer.write_statistics_merge_predicate writes ON spine.TableName = writes.TableName AND spine.ColumnName = writes.ColumnName
-# MAGIC     )
-# MAGIC MERGE INTO delta_optimizer.all_tables_cardinality_stats AS target
-# MAGIC USING filter_cols AS source ON source.TableName = target.TableName AND source.ColumnName = target.ColumnName
-# MAGIC WHEN MATCHED THEN UPDATE SET
-# MAGIC target.IsUsedInReads = source.IsUsedInReads,
-# MAGIC target.IsUsedInWrites = source.IsUsedInWrites
+spark.sql("""WITH filter_cols AS (
+    SELECT DISTINCT
+    spine.TableName,
+    spine.ColumnName,
+    CASE WHEN reads.QueryReferenceCount >= 1 THEN 1 ELSE 0 END AS IsUsedInReads,
+    CASE WHEN writes.HasColumnInMergePredicate >= 1 THEN 1 ELSE 0 END AS IsUsedInWrites
+    FROM delta_optimizer.all_tables_cardinality_stats AS spine
+    LEFT JOIN delta_optimizer.read_statistics_scaled_results reads ON spine.TableName = reads.TableName AND spine.ColumnName = reads.ColumnName
+    LEFT JOIN delta_optimizer.write_statistics_merge_predicate writes ON spine.TableName = writes.TableName AND spine.ColumnName = writes.ColumnName
+    )
+MERGE INTO delta_optimizer.all_tables_cardinality_stats AS target
+USING filter_cols AS source ON source.TableName = target.TableName AND source.ColumnName = target.ColumnName
+WHEN MATCHED THEN UPDATE SET
+target.IsUsedInReads = source.IsUsedInReads,
+target.IsUsedInWrites = source.IsUsedInWrites
+""")
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC SELECT * FROM delta_optimizer.all_tables_cardinality_stats
+# MAGIC SELECT * FROM delta_optimizer.all_tables_cardinality_stats WHERE TableName = 'detection.viewing_commercials_firehose'
 
 # COMMAND ----------
 
@@ -148,7 +147,7 @@ for i in cardinality_config:
 
 # COMMAND ----------
 
-""### Final ranking steps
+### Final ranking steps
 
 ## Calculate multiplied aggregate weighted score
 ## Normalized into Percentile
@@ -156,47 +155,60 @@ for i in cardinality_config:
 
 # COMMAND ----------
 
-# DBTITLE 1,Add Separate Score for Write Statistics and Save Final Rankings
 # MAGIC %sql
-# MAGIC -- TO DO: make more nuanced and intelligent for generality
-# MAGIC -- Params: SELECT "${optimizeMethod}", "${numZorderCols}"
 # MAGIC 
-# MAGIC CREATE OR REPLACE TABLE delta_optimizer.final_ranked_cols_by_table
-# MAGIC AS 
-# MAGIC WITH final_stats AS (
-# MAGIC SELECT
-# MAGIC COALESCE(reads.TableName, writes.TableName) AS TableName,
-# MAGIC COALESCE(reads.ColumnName, writes.ColumnName) AS ColumnName,
-# MAGIC QueryRefernceCountScaled,
-# MAGIC RawTotalRuntimeScaled,
-# MAGIC AvgQueryDurationScaled,
-# MAGIC TotalColumnOccurrencesForAllQueriesScaled,
-# MAGIC AvgColumnOccurrencesInQueriesScaled,
-# MAGIC COALESCE(HasColumnInMergePredicate, 0) AS HasColumnInMergePredicate -- Not all tables will be MERGE targets
-# MAGIC FROM delta_optimizer.read_statistics_scaled_results AS reads 
-# MAGIC LEFT JOIN delta_optimizer.write_statistics_merge_predicate AS writes ON writes.TableName = reads.TableName AND writes.ColumnName = reads.ColumnName
-# MAGIC ),
-# MAGIC raw_scoring AS (
-# MAGIC SELECT 
-# MAGIC *,
-# MAGIC CASE WHEN "${optimizeMethod}" = "Both" THEN QueryRefernceCountScaled + RawTotalRuntimeScaled + AvgQueryDurationScaled + TotalColumnOccurrencesForAllQueriesScaled + HasColumnInMergePredicate /*evenly weight merge predicate but add it in */
-# MAGIC WHEN "${optimizeMethod}" = "Read" THEN QueryRefernceCountScaled + RawTotalRuntimeScaled + AvgQueryDurationScaled + TotalColumnOccurrencesForAllQueriesScaled /* If Read, do not add merge predicate to score */
-# MAGIC WHEN "${optimizeMethod}" = "Write" THEN QueryRefernceCountScaled + RawTotalRuntimeScaled + AvgQueryDurationScaled + TotalColumnOccurrencesForAllQueriesScaled + 5*HasColumnInMergePredicate /* heavily weight the column such that it is always included in ZORDER , TO DO: Factor in cardinality here */
-# MAGIC END AS RawScore
-# MAGIC FROM final_stats
-# MAGIC ),
-# MAGIC -- Add cardinality in here somehow
-# MAGIC ranked_scores AS (
-# MAGIC SELECT 
-# MAGIC *,
-# MAGIC ROW_NUMBER() OVER( PARTITION BY TableName ORDER BY RawScore DESC) AS ColumnRank
-# MAGIC FROM raw_scoring
-# MAGIC )
-# MAGIC 
-# MAGIC SELECT 
-# MAGIC *
-# MAGIC FROM ranked_scores
-# MAGIC WHERE ColumnRank <= "${numZorderCols}"::integer -- filter out max ZORDER cols, we will then collect list into OPTIMIZE string to run
+# MAGIC SELECT * FROM delta_optimizer.read_statistics_scaled_results WHERE TableName = 'detection.viewing_commercials_firehose'
+
+# COMMAND ----------
+
+optimizeMethod = dbutils.widgets.get("optimizeMethod")
+numZorderCols = dbutils.widgets.get("numZorderCols")
+
+# COMMAND ----------
+
+# DBTITLE 1,Add Separate Score for Write Statistics and Save Final Rankings
+spark.sql(f"""CREATE OR REPLACE TABLE delta_optimizer.final_ranked_cols_by_table
+AS  (
+WITH final_stats AS (
+SELECT
+spine.*,
+QueryReferenceCountScaled,
+RawTotalRuntimeScaled,
+AvgQueryDurationScaled,
+TotalColumnOccurrencesForAllQueriesScaled,
+AvgColumnOccurrencesInQueriesScaled,
+isUsedInJoin,
+isUsedInFilter,
+isUsedInGroup
+FROM delta_optimizer.all_tables_cardinality_stats AS spine
+LEFT JOIN delta_optimizer.read_statistics_scaled_results AS reads ON spine.TableName = reads.TableName AND spine.ColumnName = reads.ColumnName
+),
+raw_scoring AS (
+-- THIS IS THE CORE SCORING EQUATION
+SELECT 
+*,
+ CASE WHEN '{optimizeMethod}' = "Both" THEN (((1+QueryReferenceCountScaled)*(1+RawTotalRuntimeScaled)*(1+AvgQueryDurationScaled)*(1+TotalColumnOccurrencesForAllQueriesScaled)) + 100*(IsUsedInFilter) + IsUsedInJoin + 50*IsUsedInWrites)*(CardinalityProportion) /*evenly weight merge predicate but add it in */
+WHEN '{optimizeMethod}' = "Read" THEN QueryReferenceCountScaled + RawTotalRuntimeScaled + AvgQueryDurationScaled + TotalColumnOccurrencesForAllQueriesScaled /* If Read, do not add merge predicate to score */
+WHEN '{optimizeMethod}' = "Write" THEN QueryReferenceCountScaled + RawTotalRuntimeScaled + AvgQueryDurationScaled + TotalColumnOccurrencesForAllQueriesScaled + 5*IsUsedInWrites /* heavily weight the column such that it is always included */
+END AS RawScore
+FROM final_stats
+),
+-- Add cardinality in here somehow
+ranked_scores AS (
+SELECT 
+*,
+ROW_NUMBER() OVER( PARTITION BY TableName ORDER BY RawScore DESC) AS ColumnRank
+FROM raw_scoring
+)
+
+SELECT 
+*
+FROM ranked_scores
+WHERE ColumnRank <= {numZorderCols}::integer AND (IsUsedInReads + IsUsedInWrites) >= 1
+OR (CardinalityProportion >= 0.2 AND RawScore IS NOT NULL) -- filter out max ZORDER cols, we will then collect list into OPTIMIZE string to run
+ORDER BY TableName, ColumnRank
+    )
+""")
 
 # COMMAND ----------
 
