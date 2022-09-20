@@ -46,7 +46,7 @@ hostname_redshift = '<insert-host-name>'
 port_redshift = '5439'
 tempdir_redshift_unloads = '<insert-temp-s3-path>'
 iam_role_redshift = '<insert-redshift-iam-role>'
-database = "<insert-detection-database>"
+database = "<insert-database>"
 print(f"Running testing off: {hostname_redshift}")
 
 # COMMAND ----------
