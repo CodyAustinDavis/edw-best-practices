@@ -4,7 +4,7 @@
 # MAGIC # Delta Optimizer
 # MAGIC 
 # MAGIC ## Purpose:
-# MAGIC <p1> The Delta optimizer scapes and analyzes the query history in DBSQL via the Query History API, as well as the Delta transaction logs on one or many databases, builds a data profile to determine the most important columns that each tables should be Z-ordered by. This aims to drastically reduce the amount of manual discovery and tuning users must do to properly optimize their delta tables, especially when the primary query interface is through a DBSQL Warehouse (as an analyst using SQL or a BI tool that auto-generates SQL). This is especially key when BI tools primarily pass auto-generated SQL to a DBSQL Warehouse, thus making it much more difficult to optimize tables manually at scale. </p1>
+# MAGIC <p1> The Delta optimizer scrapes and analyzes the query history in DBSQL via the Query History API, as well as the Delta transaction logs on one or many databases, builds a data profile to determine the most important columns that each tables should be Z-ordered by. This aims to drastically reduce the amount of manual discovery and tuning users must do to properly optimize their delta tables, especially when the primary query interface is through a DBSQL Warehouse (as an analyst using SQL or a BI tool that auto-generates SQL). This is especially key when BI tools primarily pass auto-generated SQL to a DBSQL Warehouse, thus making it much more difficult to optimize tables manually at scale. </p1>
 # MAGIC   
 # MAGIC   
 # MAGIC ### Steps: 
@@ -12,10 +12,17 @@
 # MAGIC <li> 1. Gather Query History and calculate statistics on all columns for all tables (option to select a particular database)
 # MAGIC <li> 2. Read transaction logs and find any merge predicates (if any) run for all tables in one or many databases
 # MAGIC <li> 3. Calculate Statistics and Rank Columns for each table for Z-order strategy using runtime stats, occurence stats, and cardinality stats
-# MAGIC <li> 4. Prepare and save a ready-to-use config delta table that can be ingested by a job or DLT to actually run the recommended OPTIMIZE commands </li>
+# MAGIC <li> 4. Prepare and save a ready-to-use config delta table that can be ingested by a job or DLT to actually run the recommended OPTIMIZE/ANALYZE/TBLPROP commands </li>
 # MAGIC   
 # MAGIC ### Roadmap: 
 # MAGIC 
+# MAGIC #### General Roadmap: 
+# MAGIC 
+# MAGIC <li> 1. Separate optimization rules from code logic to make rules configurable
+# MAGIC <li> 2. Add option to run for user or simply provide a DBSQL Dashboard to make suggestions OOTB
+# MAGIC <li> 3. Add table exception rules, allow users to decide which table to auto optimize and which to manually override if they want to optimize their own
+# MAGIC <li> 4. Dynamically figure out job configuration (cluster size / periodicity) of commands to run
+# MAGIC   
 # MAGIC #### Query Statistics: 
 # MAGIC 
 # MAGIC <li> 1. Enable parsing of queries from not just DBSQL, but ALL clusters (jobs/AP)
@@ -24,9 +31,9 @@
 # MAGIC 
 # MAGIC #### Transaction Log Statistics: 
 # MAGIC 
-# MAGIC <li> 1. Add partition filtering and file size managemnt
-# MAGIC   
-# MAGIC </li>
+# MAGIC <li> 1. Add partition filtering and file size management - <b> DONE </b>
+# MAGIC <li> 2. Column Reording first 32 - <b> IN PROGRESS </b>  
+# MAGIC <li> 3. Add Analyze Table STATS - <b> DONE </b>  
 # MAGIC 
 # MAGIC #### Ranking Statistics Algorithm:
 # MAGIC 

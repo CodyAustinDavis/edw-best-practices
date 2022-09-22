@@ -173,20 +173,26 @@ spark.sql("""CREATE DATABASE IF NOT EXISTS delta_optimizer;""")
 
 # DBTITLE 1,Parse Reponse for Columns we need to calculate statistics
 spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.raw_query_history_statistics
-AS
-SELECT
-query_id,
-query_start_time_ms,
-query_end_time_ms,
-duration,
-query_text,
-status,
-statement_type,
-rows_produced,
-metrics
-FROM raw
-WHERE statement_type = 'SELECT';
+      AS
+    SELECT
+    query_id,
+    query_start_time_ms,
+    query_end_time_ms,
+    duration,
+    query_text,
+    status,
+    statement_type,
+    rows_produced,
+    metrics
+    FROM raw
+    WHERE statement_type = 'SELECT';
 """)
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM delta_optimizer.raw_query_history_statistics
 
 # COMMAND ----------
 
@@ -424,9 +430,8 @@ FROM step_2
 
 # COMMAND ----------
 
-from pyspark.sql.functions import *
+# DBTITLE 1,Scale Query Statistics
 
-## This is the process for EACH table
 df = spark.sql("""SELECT * FROM delta_optimizer.read_statistics_column_level_summary""")
 
 columns_to_scale = ["QueryReferenceCount", "RawTotalRuntime", "AvgQueryDuration", "TotalColumnOccurrencesForAllQueries", "AvgColumnOccurrencesInQueryies"]
@@ -457,3 +462,9 @@ df_scaled = (df_pre_scaled
 df_scaled.createOrReplaceTempView("final_scaled_reads")
 
 spark.sql("""CREATE OR REPLACE TABLE delta_optimizer.read_statistics_scaled_results AS SELECT * FROM final_scaled_reads""")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM delta_optimizer.read_statistics_scaled_results
