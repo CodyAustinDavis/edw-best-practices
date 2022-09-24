@@ -97,6 +97,8 @@ requestString = {
 ## Convert dict to json
 v = json.dumps(requestString)
 
+print(v)
+
 # COMMAND ----------
 
 # DBTITLE 1,Submit Initial Request
@@ -105,8 +107,14 @@ headers_auth = {"Authorization":f"Bearer {DBX_TOKEN}"}
 
 ## This file could be large
 ## Convert response to dict
-endp_resp = requests.get(uri,data=v, headers=headers_auth).json()
+endp_resp_raw = requests.get(uri,data=v, headers=headers_auth).json()
+
+#print(endp_resp)
 initial_resp = endp_resp.get("res")
+
+print(workspaceName)
+print(DBX_TOKEN)
+print(initial_resp)
 
 # COMMAND ----------
 
