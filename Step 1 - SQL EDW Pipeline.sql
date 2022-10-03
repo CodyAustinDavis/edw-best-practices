@@ -213,7 +213,7 @@ TRUNCATE TABLE iot_dashboard.bronze_sensors;
 -- MAGIC ## Partitions - Do not over partition - usually ZORDERING covers what you need - even in big tables
 -- MAGIC ### File Sizes - smaller for BI heavy and update heavy tables 64mb to 128mb
 -- MAGIC #### Order of files -- ZORDER(col,col) -- ZORDER on most used filtering/join columns, in order of cardinality like a funnel
--- MAGIC ##### Idexes -- For highly selective queries - need to create index first then fill with data "needle in a haystack"
+-- MAGIC ##### Indexes -- For highly selective queries - need to create index first then fill with data "needle in a haystack"
 
 -- COMMAND ----------
 

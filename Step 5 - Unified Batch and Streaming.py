@@ -166,6 +166,7 @@ df_bronze = (
   spark.readStream
 #.option("startingVersion", "1") ## Or .option("startingTimestamp", "2018-10-18") You can optionally explicitly state which version to start streaming from
 .option("ignoreChanges", "true") ## .option("ignoreDeletes", "true")
+#.option("useChangeFeed", "true")
 .option("maxFilesPerTrigger", 100) ## Optional - FIFO processing
 .table("iot_dashboard_autoloader.bronze_sensors")
 )

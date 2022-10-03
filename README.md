@@ -9,9 +9,9 @@ This Git Project Provides a framework of example notebooks that aims to show any
 
 <li> 3. Step 3 - Build and analyze summary analytics tables
   
-<li> 4. Step 4 - Convert and old batch pipeline to a Streaming pipeline
+<li> 4. Step 4 - Create gold views
   
-  
+<li> 4. Step 5 - Convert and old batch pipeline to a Streaming pipeline 
   
   
  This Git repo also provides some examples of more advacned use cases like using the Delta Change Data feed. 
