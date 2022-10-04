@@ -136,7 +136,7 @@ FROM (SELECT
       value  AS value -- This is a JSON object
 FROM "/databricks-datasets/iot-stream/data-device/")
 FILEFORMAT = json
-COPY_OPTIONS('force'='false') --'true' always loads all data it sees. option to be incremental or always load all files
+COPY_OPTIONS('force'='true') --'true' always loads all data it sees. option to be incremental or always load all files
 
 
 --Other Helpful copy options: 
