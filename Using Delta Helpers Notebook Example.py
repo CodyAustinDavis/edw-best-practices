@@ -18,12 +18,17 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install -r helperfunctions/requirements.txt
+
+# COMMAND ----------
+
 # DBTITLE 1,Import
 from helperfunctions.deltahelpers import DeltaHelpers
 
 # COMMAND ----------
 
 # DBTITLE 1,Initialize
+## 2 Params [Optional - db_name, temp_root_path]
 deltaHelpers = DeltaHelpers()
 
 # COMMAND ----------
@@ -32,7 +37,10 @@ deltaHelpers = DeltaHelpers()
 df = spark.read.format("json").load("/databricks-datasets/iot-stream/data-device/")
 
 ## Methods return the cached dataframe so you can continue on as needed without reloading source each time AND you can reference in SQL (better for foreachBatch)
+## No longer lazy -- this calls an action
 df = deltaHelpers.createOrReplaceTempDeltaTable(df, "iot_data")
+
+## Build ML Models
 
 display(df)
 
@@ -45,6 +53,10 @@ display(df)
 
 # COMMAND ----------
 
+df.count()
+
+# COMMAND ----------
+
 # DBTITLE 1,Append to Temp Delta Table
 ## Data is 1,000,000 rows
 df_doubled = deltaHelpers.appendToTempDeltaTable(df, "iot_data")
@@ -54,8 +66,20 @@ df_doubled.count()
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC 
+# MAGIC DESCRIBE HISTORY delta_temp.iot_data
+
+# COMMAND ----------
+
 # DBTITLE 1,Remove Temp Delta Table
 deltaHelpers.removeTempDeltaTable("iot_data")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM delta_temp.iot_data
 
 # COMMAND ----------
 

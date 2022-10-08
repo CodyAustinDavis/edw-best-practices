@@ -9,6 +9,10 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install -r helperfunctions/requirements.txt
+
+# COMMAND ----------
+
 from helperfunctions.deltahelpers import DeltaMergeHelpers
 
 # COMMAND ----------

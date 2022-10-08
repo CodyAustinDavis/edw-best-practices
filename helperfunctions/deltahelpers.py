@@ -15,7 +15,7 @@ from pyspark.sql.types import *
 class DeltaHelpers():
 
     
-    def __init__(self, temp_root_path="dbfs:/delta_temp_db", db_name="delta_temp"):
+    def __init__(self, db_name="delta_temp", temp_root_path="dbfs:/delta_temp_db",):
         
         self.spark = SparkSession.getActiveSession()
         self.db_name = db_name
