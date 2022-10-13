@@ -55,9 +55,7 @@ TBLPROPERTIES("delta.targetFileSize"="128mb")
 -- COMMAND ----------
 
 -- DBTITLE 1,Look at Table Details
--- MAGIC %sql
--- MAGIC 
--- MAGIC DESCRIBE TABLE EXTENDED iot_dashboard.bronze_sensors
+DESCRIBE TABLE EXTENDED iot_dashboard.bronze_sensors
 
 -- COMMAND ----------
 
@@ -135,16 +133,17 @@ FROM (SELECT
       timestamp::timestamp AS timestamp,
       value  AS value -- This is a JSON object
 FROM "/databricks-datasets/iot-stream/data-device/")
-FILEFORMAT = json
-COPY_OPTIONS('force'='true') --'true' always loads all data it sees. option to be incremental or always load all files
+FILEFORMAT = json -- csv, xml, txt, parquet, binary, etc.
+COPY_OPTIONS('force'='false') --'true' always loads all data it sees. option to be incremental or always load all files
 
 
---Other Helpful copy options: 
+--Other Helpful copy options:
 /*
-PATTERN('[A-Za-z].csv')
+PATTERN('[A-Za-z0-9].json')
 FORMAT_OPTIONS ('ignoreCorruptFiles' = 'true') -- skips bad files for more robust incremental loads
 COPY_OPTIONS ('mergeSchema' = 'true')
-'ignoreChanges' = 'true'
+'ignoreChanges' = 'true' - ENSURE DOWNSTREAM PIPELINE CAN HANDLE DUPLICATE ALREADY PROCESSED RECORDS WITH MERGE/INSERT WHERE NOT EXISTS/Etc.
+'ignoreDeletes' = 'true'
 */;
 
 -- COMMAND ----------
@@ -191,8 +190,28 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT *;
 
 -- This calculate table stats for all columns to ensure the optimizer can build the best plan
+-- THIS IS NOT INCREMENTAL
 ANALYZE TABLE iot_dashboard.silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
+
+
+/*
+-- INCREMENTAL
+Two things will happen: 
+
+1. Files written into the table will be compacted into larger files - up to targetFileSize
+2. Co-locate files by the ZORDER keys
+
+
+Choice Factors: 
+1. Use on column often utilized in joins, filters, etc. 
+2. High cardinality columns
+
+Recommended 1-3 columns, can do 5+
+Order ZORDER cols in order of cardinality ascending
+
+*/
 OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp);
+
 
 -- Truncate bronze batch once successfully loaded
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
@@ -214,6 +233,12 @@ TRUNCATE TABLE iot_dashboard.bronze_sensors;
 -- MAGIC ### File Sizes - smaller for BI heavy and update heavy tables 64mb to 128mb
 -- MAGIC #### Order of files -- ZORDER(col,col) -- ZORDER on most used filtering/join columns, in order of cardinality like a funnel
 -- MAGIC ##### Indexes -- For highly selective queries - need to create index first then fill with data "needle in a haystack"
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC 
+-- MAGIC ##### For partitions, make sure each partitions is at LEAST 10s of GB, otherwise, your partitions are too small
 
 -- COMMAND ----------
 
