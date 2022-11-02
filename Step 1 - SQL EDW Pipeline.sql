@@ -161,6 +161,7 @@ timestamp TIMESTAMP,
 value STRING
 )
 USING DELTA 
+PARTITIONED BY (user_id)
 TBLPROPERTIES("delta.targetFileSize"="128mb") -- if update heavy, file sizes are great between 64-128 mbs. The more update heavy, the smaller the files (32-256mb)
 --LOCATION s3://<path>/ -- Always specify location for production tables so you control where it lives in S3/ADLS/GCS
 -- Not specifying location parth will put table in DBFS, a managed bucket that cannot be accessed by apps outside of databricks
@@ -210,6 +211,7 @@ Recommended 1-3 columns, can do 5+
 Order ZORDER cols in order of cardinality ascending
 
 */
+
 OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp);
 
 

@@ -78,7 +78,7 @@
 # DBTITLE 1,Create Database
 # MAGIC %sql
 # MAGIC CREATE DATABASE IF NOT EXISTS iot_dashboard_autoloader
-# MAGIC --LOCATION 's3a://<path>'
+# MAGIC --LOCATION 's3a://<path>' or 'adls://<path>'
 
 # COMMAND ----------
 
@@ -97,23 +97,23 @@
 # COMMAND ----------
 
 # DBTITLE 1,Read Stream with Autoloader - LOTS of Options for any type of data
-# MAGIC %python
-# MAGIC 
-# MAGIC   df_raw = (spark
-# MAGIC      .readStream
-# MAGIC      .format("cloudFiles")
-# MAGIC      .option("cloudFiles.format", "json")
-# MAGIC      #.option("cloudFiles.useNotifications", "true")
-# MAGIC      .option("cloudFiles.schemaLocation", autoloader_schema_location)
-# MAGIC      #.option("schema", inputSchema)
-# MAGIC      #.option("modifiedAfter", timestampString) ## option
-# MAGIC      .option("cloudFiles.schemaHints", "calories_burnt FLOAT, timestamp TIMESTAMP")
-# MAGIC      .option("cloudFiles.maxFilesPerTrigger", 10) ## maxByesPerTrigger, 10mb
-# MAGIC      .option("pathGlobFilter", "*.json.gz") ## Only certain files ## regex expr
-# MAGIC      .load(file_source_location)
-# MAGIC      #.select("*", "_metadata") ##_metadata exits with DBR 11.0 + 
-# MAGIC      .withColumn("InputFileName", input_file_name())
-# MAGIC     )
+df_raw = (spark
+     .readStream
+     .format("cloudFiles") ## csv, json, binary, text, parquet, avro
+     .option("cloudFiles.format", "json")
+     #.option("cloudFiles.useNotifications", "true")
+     .option("cloudFiles.schemaLocation", autoloader_schema_location)
+     #.option("schema", inputSchema)
+     #.option("modifiedAfter", timestampString) ## option
+     .option("cloudFiles.schemaHints", "calories_burnt FLOAT, timestamp TIMESTAMP")
+     .option("cloudFiles.maxFilesPerTrigger", 10) ## maxBytesPerTrigger, 10mb
+     .option("pathGlobFilter", "*.json.gz") ## Only certain files ## regex expr
+     .option("ignoreChanges", "true")
+     #.option("ignoreDeletes", "true")
+     .load(file_source_location)
+     #.select("*", "_metadata") ##_metadata exits with DBR 11.0 + 
+     .withColumn("InputFileName", input_file_name())
+    )
 
 # COMMAND ----------
 
@@ -132,7 +132,7 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 .writeStream
 .format("delta")
 .option("checkpointLocation", checkpoint_location)
-.trigger(availableNow=True) ## once=True, processingTime = '5 minutes', continuous='1 minute'
+.trigger(availableNow=True) ## once=True, processingTime = '5 minutes', continuous ='1 minute'
 .toTable("iot_dashboard_autoloader.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
 
@@ -271,7 +271,7 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 (df_bronze
 .writeStream
 .option("checkpointLocation", checkpoint_location_silver)
-.trigger(availableNow=True) ## processingTime='1 minute' -- Now we can run this merge every minute!
+.trigger(processingTime='3 seconds') ## processingTime='1 minute' -- Now we can run this merge every minute!
 .foreachBatch(mergeStatementForMicroBatch)
 .start()
 )
@@ -281,4 +281,4 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC SELECT * FROM iot_dashboard_autoloader.silver_sensors;
+# MAGIC SELECT * FROM iot_dashboard.silver_sensors;
