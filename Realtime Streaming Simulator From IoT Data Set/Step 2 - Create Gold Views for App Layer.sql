@@ -1,6 +1,20 @@
 -- Databricks notebook source
 -- MAGIC %md
 -- MAGIC 
+-- MAGIC ## Building Production Data Apps - Last Mile BI on Databricks and Dash
+-- MAGIC 
+-- MAGIC <b> Dash apps:  </b> https://dash.gallery/Portal/
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC 
+-- MAGIC <img src="https://miro.medium.com/max/1400/1*N2hJnle6RJ6HRRF4ISFBjw.gif">
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC 
 -- MAGIC ## Dashboard Recommendations
 -- MAGIC 
 -- MAGIC 1. Pushdown timestamp filters as much as possible
@@ -10,8 +24,6 @@
 -- COMMAND ----------
 
 -- DBTITLE 1,Generate View with Heavy Logic
-
-
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors
 AS 
 SELECT *,
@@ -58,3 +70,36 @@ FROM real_time_iot_dashboard.gold_sensors
 
 SELECT * FROM real_time_iot_dashboard.gold_sensors
 WHERE timestamp >= (current_timestamp() - INTERVAL '1 hour')
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Embed this into a Dash Callback to create automatically refreshing tables that trigger when the table updates
+WITH log AS
+(DESCRIBE HISTORY real_time_iot_dashboard.bronze_sensors
+),
+state AS (
+SELECT
+version,
+timestamp,
+operation
+FROM log
+WHERE (timestamp >= current_timestamp() - INTERVAL '24 hours')
+AND operation IN ('MERGE', 'WRITE', 'DELETE', 'STREAMING UPDATE')
+ORDER By version DESC
+),
+comparison AS (
+SELECT DISTINCT
+s1.version,
+s1.timestamp,
+s1.operation,
+LAG(version) OVER (ORDER BY version) AS Previous_Version,
+LAG(timestamp) OVER (ORDER BY timestamp) AS Previous_Timestamp
+FROM state AS s1
+ORDER BY version DESC)
+
+SELECT
+date_trunc('hour', timestamp) AS HourBlock,
+AVG(timestamp::double - Previous_Timestamp::double) AS AvgUpdateFrequencyInSeconds
+FROM comparison
+GROUP BY date_trunc('hour', timestamp)
+ORDER BY HourBlock

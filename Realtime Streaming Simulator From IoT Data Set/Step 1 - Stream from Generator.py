@@ -21,6 +21,12 @@
 
 # MAGIC %md
 # MAGIC 
+# MAGIC <img src="https://miro.medium.com/max/1400/1*N2hJnle6RJ6HRRF4ISFBjw.gif">
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
 # MAGIC ## Autoloader Benefits: 
 # MAGIC 
 # MAGIC 1. More Scalable Directory Listing (incremental + file notification)
@@ -194,6 +200,42 @@ if start_over == "Yes":
 history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
 
 display(history_df)
+
+# COMMAND ----------
+
+# DBTITLE 1,Pro Tip: Use Transaction Log Metadata to build intelligent Data Apps
+# MAGIC %sql
+# MAGIC 
+# MAGIC 
+# MAGIC WITH log AS
+# MAGIC (DESCRIBE HISTORY real_time_iot_dashboard.bronze_sensors
+# MAGIC ),
+# MAGIC state AS (
+# MAGIC SELECT
+# MAGIC version,
+# MAGIC timestamp,
+# MAGIC operation
+# MAGIC FROM log
+# MAGIC WHERE (timestamp >= current_timestamp() - INTERVAL '24 hours')
+# MAGIC AND operation IN ('MERGE', 'WRITE', 'DELETE', 'STREAMING UPDATE')
+# MAGIC ORDER By version DESC
+# MAGIC ),
+# MAGIC comparison AS (
+# MAGIC SELECT DISTINCT
+# MAGIC s1.version,
+# MAGIC s1.timestamp,
+# MAGIC s1.operation,
+# MAGIC LAG(version) OVER (ORDER BY version) AS Previous_Version,
+# MAGIC LAG(timestamp) OVER (ORDER BY timestamp) AS Previous_Timestamp
+# MAGIC FROM state AS s1
+# MAGIC ORDER BY version DESC)
+# MAGIC 
+# MAGIC SELECT
+# MAGIC date_trunc('hour', timestamp) AS HourBlock,
+# MAGIC AVG(timestamp::double - Previous_Timestamp::double) AS AvgUpdateFrequencyInSeconds
+# MAGIC FROM comparison
+# MAGIC GROUP BY date_trunc('hour', timestamp)
+# MAGIC ORDER BY HourBlock
 
 # COMMAND ----------
 
