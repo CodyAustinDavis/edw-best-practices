@@ -68,9 +68,9 @@ print(f"Start Over?: {start_over}")
 # DBTITLE 1,Do not edit - Standard file paths
 ## Output path of real-time data generator
 file_source_location = "dbfs:/Filestore/real-time-data-demo/iot_dashboard/"
-checkpoint_location = f"dbfs:/FileStore/real-time-data-demo/checkpoints/IotDemoCheckpoints/AutoloaderDemo/bronze"
-checkpoint_location_silver = f"dbfs:/FileStore/real-time-data-demo/checkpoints/silver"
-autoloader_schema_location = f"dbfs:/FileStore/real-time-data-demo/schema_checkpoints/AutoloaderDemoSchema/"
+checkpoint_location = f"dbfs:/FileStore/real-time-data-demo-checkpoints/bronze"
+checkpoint_location_silver = f"dbfs:/FileStore/real-time-data-demo-checkpoints/silver"
+autoloader_schema_location = f"dbfs:/FileStore/real-time-data-demo-schema_checkpoints/AutoloaderDemoSchema/"
 database_name = "real_time_iot_dashboard"
 
 # COMMAND ----------
@@ -129,11 +129,11 @@ df_raw = (spark
      .option("cloudFiles.schemaLocation", autoloader_schema_location)
      #.option("schema", inputSchema)
      #.option("modifiedAfter", timestampString) ## option
-     .option("cloudFiles.maxFilesPerTrigger", 100000) ## maxBytesPerTrigger, 10mb
+     #.option("cloudFiles.maxFilesPerTrigger", 100000) ## maxBytesPerTrigger, 10mb
      #.option("pathGlobFilter", "*.json*") ## Only certain files ## regex expr
-     .option("ignoreChanges", "true")
+     #.option("ignoreChanges", "true")
      #.option("ignoreDeletes", "true")
-     .option("latestFirst", "false")
+     #.option("latestFirst", "false")
      .load(file_source_location)
      .selectExpr(
                 "value:device_id::integer AS device_id",
@@ -171,30 +171,13 @@ if start_over == "Yes":
 .format("delta")
 .option("checkpointLocation", checkpoint_location)
 .trigger(processingTime = '2 seconds') ## once=True, processingTime = '5 minutes', continuous ='1 minute'
-#.partitionBy("date_month") ## DO NOT OVER PARTITION
+#.partitionBy("date_month") ## DO NOT OVER PARTITION, but partitions when you need to (data deletion, etc.)
 .toTable(f"{database_name}.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
 
 # COMMAND ----------
 
-# MAGIC %md 
-# MAGIC 
-# MAGIC ### Now we have data streaming into a bronze table at any clip/rate we want. 
-# MAGIC #### How can we stream into a silver table with merge?
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC 
-# MAGIC <b> Stream options from a delta table: </b> https://docs.databricks.com/delta/delta-streaming.html
-# MAGIC 
-# MAGIC 
-# MAGIC <li> <b> 1. Limit throughput rate: </b>  https://docs.databricks.com/delta/delta-streaming.html#limit-input-rate
-# MAGIC <li> <b> 2. Specify starting version or timestamp: </b>  https://docs.databricks.com/delta/delta-streaming.html#specify-initial-position
-# MAGIC <li> <b> 3. Ignore updates/deletes: </b>  https://docs.databricks.com/delta/delta-streaming.html#ignore-updates-and-deletes
-
-# COMMAND ----------
-
+# DBTITLE 1,Watch the table update
 
 ## You can use this to see how often to trigger visuals directly in Dash!
 history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
@@ -236,6 +219,36 @@ display(history_df)
 # MAGIC FROM comparison
 # MAGIC GROUP BY date_trunc('hour', timestamp)
 # MAGIC ORDER BY HourBlock
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC <b> Do we need to optimize our table? 
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC 
+# MAGIC ## Now we have data streaming into a bronze table at any clip/rate we want. 
+# MAGIC ## How can we stream into a silver table with merge?
+# MAGIC 
+# MAGIC <b> CAVEATS </b>
+# MAGIC 
+# MAGIC <li> 1. Only use merge when SLA is high enough
+# MAGIC <li> 2. Merge is the most expensive operation in a database, do not use if you dont need it.
+# MAGIC <li> 3. This design pattern is better suited for SLAs > 5s
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC <b> Stream options from a delta table: </b> https://docs.databricks.com/delta/delta-streaming.html
+# MAGIC 
+# MAGIC 
+# MAGIC <li> <b> 1. Limit throughput rate: </b>  https://docs.databricks.com/delta/delta-streaming.html#limit-input-rate
+# MAGIC <li> <b> 2. Specify starting version or timestamp: </b>  https://docs.databricks.com/delta/delta-streaming.html#specify-initial-position
+# MAGIC <li> <b> 3. Ignore updates/deletes: </b>  https://docs.databricks.com/delta/delta-streaming.html#ignore-updates-and-deletes
 
 # COMMAND ----------
 
