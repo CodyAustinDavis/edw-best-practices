@@ -1,4 +1,16 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC 
+# MAGIC ### This notebook simulates a real-time feed from an IoT Device
+# MAGIC 
+# MAGIC <b> Notes: </b>
+# MAGIC   
+# MAGIC   <li> 1. Starts with an initial batch of the earlist data from the databricks-datasets/iot-stream
+# MAGIC   <li> 2. Allows user to truncate and reload simulated streaming data
+# MAGIC   <li> 3. Allows user to decide how often to drop files to simulate different update frequencies
+
+# COMMAND ----------
+
 # DBTITLE 1,Define Source and Sink Paths
 source_data_path = "/databricks-datasets/iot-stream/data-device/"
 target_data_path =  "dbfs:/Filestore/real-time-data-demo/iot_dashboard/"
