@@ -5,7 +5,7 @@
 # MAGIC 
 # MAGIC ## This creates 2 tables: 
 # MAGIC 
-# MAGIC <b> Database: </b> iot_dashboard
+# MAGIC <b> Database: </b> real_time_iot_dashboard
 # MAGIC 
 # MAGIC <b> Tables: </b> silver_sensors, silver_users 
 # MAGIC 
@@ -51,48 +51,65 @@
 
 # COMMAND ----------
 
-# MAGIC %python
-# MAGIC 
-# MAGIC file_source_location = "dbfs:/databricks-datasets/iot-stream/data-device/"
-# MAGIC checkpoint_location = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemo/bronze"
-# MAGIC checkpoint_location_silver = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemo/silver"
-# MAGIC autoloader_schema_location = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemoSchema/"
+dbutils.widgets.dropdown("StartOver", "Yes", ["No", "Yes"])
+
+start_over = dbutils.widgets.get("StartOver")
+
+print(f"Start Over?: {start_over}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Do not edit - Standard file paths
+## Output path of real-time data generator
+file_source_location = "dbfs:/Filestore/real-time-data-demo/iot_dashboard/"
+checkpoint_location = f"dbfs:/FileStore/real-time-data-demo/checkpoints/IotDemoCheckpoints/AutoloaderDemo/bronze"
+checkpoint_location_silver = f"dbfs:/FileStore/real-time-data-demo/checkpoints/silver"
+autoloader_schema_location = f"dbfs:/FileStore/real-time-data-demo/schema_checkpoints/AutoloaderDemoSchema/"
+database_name = "real_time_iot_dashboard"
 
 # COMMAND ----------
 
 # DBTITLE 1,Look at Raw Data Source
-# MAGIC %python 
-# MAGIC 
-# MAGIC dbutils.fs.ls('dbfs:/databricks-datasets/iot-stream/data-device/')
+dbutils.fs.ls(file_source_location)
 
 # COMMAND ----------
 
 # DBTITLE 1,Imports
-# MAGIC %python
-# MAGIC 
-# MAGIC from pyspark.sql.functions import *
-# MAGIC from pyspark.sql.types import *
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+import uuid
+
+# COMMAND ----------
+
+#### Register udf for generating UUIDs
+uuidUdf= udf(lambda : str(uuid.uuid4()),StringType())
 
 # COMMAND ----------
 
 # DBTITLE 1,Create Database
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS iot_dashboard_autoloader
-# MAGIC --LOCATION 's3a://<path>' or 'adls://<path>'
+spark.sql(f"""CREATE DATABASE IF NOT EXISTS {database_name};""")
+##LOCATION 's3a://<path>' or 'adls://<path>'
 
 # COMMAND ----------
 
 # DBTITLE 1,Start Over
-# MAGIC %sql
-# MAGIC 
-# MAGIC DROP TABLE IF EXISTS iot_dashboard_autoloader.bronze_sensors;
+if start_over == "Yes":
+  
+  spark.sql(f"""DROP TABLE IF EXISTS {database_name}.bronze_sensors""")
+  spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_sensors""")
+  spark.sql(f"""DROP TABLE IF EXISTS {database_name}.bronze_users""")
+  spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_users""")
 
 # COMMAND ----------
 
 # DBTITLE 1,Let Autoloader Sample files for schema inference - backfill interval can refresh this inference
-# MAGIC %python 
-# MAGIC ## for schema inference
-# MAGIC spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 100) ## 1000 is default
+spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 10) ## 1000 is default
+
+# COMMAND ----------
+
+# DBTITLE 1,Re-infer schema if starting over
+if start_over == "Yes":
+  dbutils.fs.rm(autoloader_schema_location, recurse=True)
 
 # COMMAND ----------
 
@@ -100,17 +117,28 @@
 df_raw = (spark
      .readStream
      .format("cloudFiles") ## csv, json, binary, text, parquet, avro
-     .option("cloudFiles.format", "json")
+     .option("cloudFiles.format", "text")
+     .option("cloudFiles.useIncrementalListing", "true")
      #.option("cloudFiles.useNotifications", "true")
      .option("cloudFiles.schemaLocation", autoloader_schema_location)
      #.option("schema", inputSchema)
      #.option("modifiedAfter", timestampString) ## option
-     .option("cloudFiles.schemaHints", "calories_burnt FLOAT, timestamp TIMESTAMP")
-     .option("cloudFiles.maxFilesPerTrigger", 10) ## maxBytesPerTrigger, 10mb
-     .option("pathGlobFilter", "*.json.gz") ## Only certain files ## regex expr
+     .option("cloudFiles.maxFilesPerTrigger", 100000) ## maxBytesPerTrigger, 10mb
+     #.option("pathGlobFilter", "*.json*") ## Only certain files ## regex expr
      .option("ignoreChanges", "true")
      #.option("ignoreDeletes", "true")
+     .option("latestFirst", "false")
      .load(file_source_location)
+     .selectExpr(
+                "value:device_id::integer AS device_id",
+                "value:user_id::integer AS user_id",
+                "value:calories_burnt::decimal AS calories_burnt",
+                "value:miles_walked::decimal AS miles_walked",
+                "value:num_steps::decimal AS num_steps",
+                "value:time_stamp::timestamp AS timestamp",
+                "value::string AS raw_data"
+     )
+     .withColumn("id", uuidUdf())
      #.select("*", "_metadata") ##_metadata exits with DBR 11.0 + 
      .withColumn("InputFileName", input_file_name())
     )
@@ -123,37 +151,23 @@ display(df_raw)
 # COMMAND ----------
 
 # DBTITLE 1,Delete Checkpoint Location to start over
-dbutils.fs.rm(checkpoint_location, recurse=True)
+if start_over == "Yes":
+  dbutils.fs.rm(checkpoint_location, recurse=True)
 
 # COMMAND ----------
 
 # DBTITLE 1,Write Stream -- same as any other stream
+## with DBR 11.2+, Order insertion clustering is automatic!
+
 (df_raw
- .withColumn("date_month", date_trunc('month', col("value:time_stamp")))
+ .withColumn("date_month", date_trunc('month', col("timestamp")))
 .writeStream
 .format("delta")
 .option("checkpointLocation", checkpoint_location)
-.trigger(availableNow=True) ## once=True, processingTime = '5 minutes', continuous ='1 minute'
-.partitionBy("date_month")
-.toTable("iot_dashboard_autoloader.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
+.trigger(processingTime = '2 seconds') ## once=True, processingTime = '5 minutes', continuous ='1 minute'
+#.partitionBy("date_month") ## DO NOT OVER PARTITION
+.toTable(f"{database_name}.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC OPTIMIZE iot_dashboard_autoloader.bronze_sensors ZORDER BY (time_stamp, tweet_id);
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT 
-# MAGIC value,
-# MAGIC value:user_id AS unique_id,
-# MAGIC value:user_idskdjfhsdk AS unique_id,
-# MAGIC value:time_stamp::timestamp AS tweet_ts
-# MAGIC FROM iot_dashboard_autoloader.bronze_sensors
 
 # COMMAND ----------
 
@@ -175,8 +189,11 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC DESCRIBE HISTORY iot_dashboard_autoloader.bronze_sensors;
+
+## You can use this to see how often to trigger visuals directly in Dash!
+history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
+
+display(history_df)
 
 # COMMAND ----------
 
@@ -186,19 +203,35 @@ df_bronze = (
 #.option("startingVersion", "1") ## Or .option("startingTimestamp", "2018-10-18") You can optionally explicitly state which version to start streaming from
 .option("ignoreChanges", "true") ## .option("ignoreDeletes", "true")
 #.option("useChangeFeed", "true")
-.option("maxFilesPerTrigger", 100) ## Optional - FIFO processing
-.table("iot_dashboard_autoloader.bronze_sensors")
+.option("maxFilesPerTrigger", 100000) ## Optional - FIFO processing
+.table(f"{database_name}.bronze_sensors")
 )
 
 #display(df_bronze)
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## If your data has updates and is not sub-second latency, you can use Structured Streaming to MERGE anything at any clip!
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC <b> WARNING: DO NOT USE MERGE FOR REAL-TIME PIPELINES - use watermarking instead </b>
 
 # COMMAND ----------
 
 # DBTITLE 1,Create Target Silver Table for Merge
-# MAGIC %sql
-# MAGIC CREATE OR REPLACE TABLE iot_dashboard_autoloader.silver_sensors
-# MAGIC AS SELECT * FROM iot_dashboard_autoloader.bronze_sensors WHERE 1=2;
+spark.sql(f"""CREATE OR REPLACE TABLE {database_name}.silver_sensors
+AS SELECT * FROM {database_name}.bronze_sensors WHERE 1=2;""")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## Use Structured Streaming for ANY EDW Workload with this design Pattern!
 
 # COMMAND ----------
 
@@ -211,7 +244,7 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   
   """
   #### Python way
-  silverDeltaTable = DeltaTable.forName(spark, "iot_dashboard_autoloader.silver_sensors")
+  silverDeltaTable = DeltaTable.forName(spark, f"{database_name}.silver_sensors")
   
   ## Delete duplicates in source if there are any 
   
@@ -244,26 +277,19 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   ## Register microbatch in SQL temp table and run merge using spark.sql
   microBatchDf.createOrReplaceGlobalTempView("updates_df")
   
-  spark.sql("""
+  spark.sql(f"""
   
-  MERGE INTO iot_dashboard.silver_sensors AS target
+  MERGE INTO {database_name}.silver_sensors AS target
   USING (
-         SELECT Id::integer,
-                device_id::integer,
-                user_id::integer,
-                calories_burnt::decimal,
-                miles_walked::decimal,
-                num_steps::decimal,
-                timestamp::timestamp,
-                value::string
+         SELECT *
          FROM (
-           SELECT *,ROW_NUMBER() OVER(PARTITION BY Id, user_id, device_id, timestamp ORDER BY timestamp DESC) AS DupRank
+           SELECT *,ROW_NUMBER() OVER(PARTITION BY id, user_id, device_id, timestamp ORDER BY timestamp DESC) AS DupRank
            FROM global_temp.updates_df
              )
          WHERE DupRank = 1
          )
                 AS source
-  ON source.Id = target.Id
+  ON source.id = target.id
   AND source.user_id = target.user_id
   AND source.device_id = target.device_id
   WHEN MATCHED THEN UPDATE SET 
@@ -275,7 +301,7 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   """)
   
   ## optimize table after the merge for faster queries
-  spark.sql("""OPTIMIZE iot_dashboard_autoloader.silver_sensors ZORDER BY (timestamp, device_id, user_id)""")
+  spark.sql(f"""OPTIMIZE {database_name}.silver_sensors ZORDER BY (timestamp)""")
   
   return
 
@@ -283,6 +309,7 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
 
 # DBTITLE 1,Delete checkpoint - each stream has 1 checkpoint
 dbutils.fs.rm(checkpoint_location_silver, recurse=True)
+
 
 # COMMAND ----------
 
@@ -295,9 +322,8 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 .start()
 )
 
-
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * FROM iot_dashboard.silver_sensors;
+silver_df = spark.sql(f"""SELECT * FROM {database_name}.silver_sensors;""")
+
+display(silver_df)
