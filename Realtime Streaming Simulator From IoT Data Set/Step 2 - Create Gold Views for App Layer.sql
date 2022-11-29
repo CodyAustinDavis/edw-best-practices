@@ -70,6 +70,7 @@ FROM real_time_iot_dashboard.gold_sensors
 
 SELECT * FROM real_time_iot_dashboard.gold_sensors
 WHERE timestamp >= (current_timestamp() - INTERVAL '1 hour')
+AND user_id = 1;
 
 -- COMMAND ----------
 
