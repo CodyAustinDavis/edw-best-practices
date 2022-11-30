@@ -10,9 +10,6 @@ class RedshiftChecker():
     Dependencies: 
     1. Assumes Redshift Connector is installed on the running cluster
     2. Assumes cluster has IAM Instance profile access to the requested Databricks tables
-    3. Assumes detection, public database is same in both envs
-    4. Automatically maps staging --> ardent and vice-versa
-    
     
     ## TO DO: 
     1. Add Data Type Comparisons
@@ -85,7 +82,7 @@ class RedshiftChecker():
     #### Get Redshift Table from a query
     def getRedshiftQueryResult(self, query):
         
-        rsh_query = query.replace("staging", "ardent")
+        rsh_query = query
         redshift_df = ( self.spark.read
            .format("com.databricks.spark.redshift")
            .option("url", self.connectionString)
