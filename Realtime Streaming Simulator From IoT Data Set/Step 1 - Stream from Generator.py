@@ -1,28 +1,37 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC 
-# MAGIC # This notebook generates a full data pipeline from databricks dataset - iot-stream using Autoloader + Structured Streaming
+# MAGIC # Building Effective Streaming Pipelines -- Autoloader, Delta, Merge
 # MAGIC 
-# MAGIC ## This creates 2 tables: 
+# MAGIC ---
 # MAGIC 
-# MAGIC <b> Database: </b> real_time_iot_dashboard
+# MAGIC <span style="color:#1577D6"> **Overview**: This notebook will provide a broad overview on some key practices for streaming data from files using autoloader, streaming to and from delta, and unifying batch and streaming MERGE workloads
 # MAGIC 
-# MAGIC <b> Tables: </b> silver_sensors, silver_users 
+# MAGIC </span>
+# MAGIC ---
 # MAGIC 
-# MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
-# MAGIC 
-# MAGIC 
-# MAGIC ### 3 Parts: 
+# MAGIC ## 3 Parts: 
 # MAGIC 
 # MAGIC <li> 1. Raw to Bronze Streaming with Autoloader
 # MAGIC   
 # MAGIC <li> 2. Bronze (or even raw) to Silver Streaming with Watermarking
 # MAGIC   
 # MAGIC <li> 3. Bronze to Silver Streaming with MERGE (for less real-time, more EDW like workloads)
+# MAGIC   
+# MAGIC 
+# MAGIC ---
+# MAGIC   
+# MAGIC ### This notebook creates 2 tables from the sample data set in the asssociated data generator: 
+# MAGIC 
+# MAGIC <b> Database: </b> real_time_iot_dashboard
+# MAGIC 
+# MAGIC <b> Tables: </b> silver_sensors, silver_users 
+# MAGIC 
+# MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
 
 # COMMAND ----------
 
-# DBTITLE 1,Real-time pipeline architecture
+# DBTITLE 1,Real-time Pipeline Architecture
 # MAGIC %md
 # MAGIC 
 # MAGIC <img src="https://miro.medium.com/max/1400/0*o7m8qLauQ003jUu7">
@@ -86,6 +95,7 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Input Parameters
 dbutils.widgets.dropdown("StartOver", "Yes", ["No", "Yes"])
 
 start_over = dbutils.widgets.get("StartOver")
@@ -117,6 +127,7 @@ import uuid
 
 # COMMAND ----------
 
+# DBTITLE 1,Manually Generate Id Keys
 #### Register udf for generating UUIDs
 uuidUdf= udf(lambda : str(uuid.uuid4()),StringType())
 
@@ -224,6 +235,7 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
+# DBTITLE 1,Look at Streaming Results
 # MAGIC %sql
 # MAGIC 
 # MAGIC SELECT * FROM real_time_iot_dashboard.bronze_sensors;
