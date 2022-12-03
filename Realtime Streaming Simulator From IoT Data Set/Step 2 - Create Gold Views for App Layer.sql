@@ -17,7 +17,7 @@
 -- MAGIC 
 -- MAGIC ## Dashboard Recommendations
 -- MAGIC 
--- MAGIC 1. Pushdown timestamp filters as much as possible
+-- MAGIC 1. Pushdown timestamp filters as much as possible (especially now that insert order is preserved)
 -- MAGIC 2. Bring back as little data as necessary
 -- MAGIC 3. Make the Lakehouse do all the work
 
@@ -48,6 +48,33 @@ LIMIT 10000
 
 -- COMMAND ----------
 
+CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors_stateful
+AS 
+SELECT *,
+-- Number of Steps
+(avg(`num_steps`) OVER (
+        ORDER BY EventStart
+        ROWS BETWEEN
+          30 PRECEDING AND
+          CURRENT ROW
+      )) ::float AS SmoothedNumSteps30SecondMA, -- 30 second moving average
+     
+(avg(`num_steps`) OVER (
+        ORDER BY EventStart
+        ROWS BETWEEN
+          120 PRECEDING AND
+          CURRENT ROW
+      ))::float AS SmoothedNumSteps120SecondMA --120 second moving average
+FROM real_time_iot_dashboard.silver_sensors_stateful
+-- Photon likes things this way for some reason
+-- Use sort order / zorder file level pruning, usually on timestamp and/or lookup keys (like device_id, user_id)
+WHERE EventStart::double >= ((SELECT MAX(EventStart)::double FROM real_time_iot_dashboard.silver_sensors_stateful) - 60)
+--Use partition pruning to ignore data as it ages
+AND Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
+LIMIT 10000
+
+-- COMMAND ----------
+
 -- MAGIC %sql
 -- MAGIC 
 -- MAGIC SELECT 
@@ -62,6 +89,10 @@ LIMIT 10000
 -- DBTITLE 1,Example of Dashboard Client Side Query
 SELECT * 
 FROM real_time_iot_dashboard.gold_sensors
+
+-- COMMAND ----------
+
+SELECT * FROM real_time_iot_dashboard.gold_sensors_stateful
 
 -- COMMAND ----------
 

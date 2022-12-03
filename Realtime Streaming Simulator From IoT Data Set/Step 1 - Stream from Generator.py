@@ -10,21 +10,50 @@
 # MAGIC <b> Tables: </b> silver_sensors, silver_users 
 # MAGIC 
 # MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
+# MAGIC 
+# MAGIC 
+# MAGIC ### 3 Parts: 
+# MAGIC 
+# MAGIC <li> 1. Raw to Bronze Streaming with Autoloader
+# MAGIC   
+# MAGIC <li> 2. Bronze (or even raw) to Silver Streaming with Watermarking
+# MAGIC   
+# MAGIC <li> 3. Bronze to Silver Streaming with MERGE (for less real-time, more EDW like workloads)
 
 # COMMAND ----------
 
+# DBTITLE 1,Real-time pipeline architecture
 # MAGIC %md
 # MAGIC 
-# MAGIC <img src="https://databricks.com/wp-content/uploads/2022/03/delta-lake-medallion-architecture-2.jpeg" >
+# MAGIC <img src="https://miro.medium.com/max/1400/0*o7m8qLauQ003jUu7">
 
 # COMMAND ----------
 
+# DBTITLE 1,Plotly Dash App Output
 # MAGIC %md
 # MAGIC 
 # MAGIC <img src="https://miro.medium.com/max/1400/1*N2hJnle6RJ6HRRF4ISFBjw.gif">
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC 
+# MAGIC ## Part 1: Raw to Bronze with Watermarking
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## Get Started With Best Practices: 
+# MAGIC 
+# MAGIC <li> 1. Real-time Stateful Streaming with Watermarking: https://www.databricks.com/blog/2022/08/22/feature-deep-dive-watermarking-apache-spark-structured-streaming.html
+# MAGIC   
+# MAGIC <li> 2. Streaming Best Practices: https://docs.databricks.com/structured-streaming/production.html
+# MAGIC   
+
+# COMMAND ----------
+
+# DBTITLE 1,2 Streaming Options: Autoloader for files, Kafka/Kinesis/EventHubs for Streaming Message Queues
 # MAGIC %md
 # MAGIC 
 # MAGIC ## Autoloader Benefits: 
@@ -69,6 +98,7 @@ print(f"Start Over?: {start_over}")
 ## Output path of real-time data generator
 file_source_location = "dbfs:/Filestore/real-time-data-demo/iot_dashboard/"
 checkpoint_location = f"dbfs:/FileStore/real-time-data-demo-checkpoints/bronze"
+checkpoint_location_stateful = f"dbfs:/FileStore/real-time-data-demo-checkpoints/silver_stateful"
 checkpoint_location_silver = f"dbfs:/FileStore/real-time-data-demo-checkpoints/silver"
 autoloader_schema_location = f"dbfs:/FileStore/real-time-data-demo-schema_checkpoints/AutoloaderDemoSchema/"
 database_name = "real_time_iot_dashboard"
@@ -103,6 +133,7 @@ if start_over == "Yes":
   
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.bronze_sensors""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_sensors""")
+  spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_sensors_stateful""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.bronze_users""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_users""")
 
@@ -119,7 +150,9 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
-# DBTITLE 1,Read Stream with Autoloader - LOTS of Options for any type of data
+# DBTITLE 1,Basic Version - No State Management - Read Stream with Autoloader - LOTS of Options for any type of data
+## Why use autoloader? -- cloudFiles
+
 df_raw = (spark
      .readStream
      .format("cloudFiles") ## csv, json, binary, text, parquet, avro
@@ -135,6 +168,7 @@ df_raw = (spark
      #.option("ignoreDeletes", "true")
      #.option("latestFirst", "false")
      .load(file_source_location)
+          
      .selectExpr(
                 "value:device_id::integer AS device_id",
                 "value:user_id::integer AS user_id",
@@ -166,14 +200,33 @@ if start_over == "Yes":
 ## with DBR 11.2+, Order insertion clustering is automatic!
 
 (df_raw
- .withColumn("date_month", date_trunc('month', col("timestamp")))
+ .withColumn("date", date_trunc('day', col("timestamp")))
 .writeStream
 .format("delta")
 .option("checkpointLocation", checkpoint_location)
-.trigger(processingTime = '2 seconds') ## once=True, processingTime = '5 minutes', continuous ='1 minute'
-#.partitionBy("date_month") ## DO NOT OVER PARTITION, but partitions when you need to (data deletion, etc.)
+.trigger(processingTime = '2 seconds') ## once=True, availableNow=True, processingTime = '5 minutes', continuous ='1 minute'
+.partitionBy("date") ## DO NOT OVER PARTITION, but partition when you need to (data deletion for merge heavy tables, etc.)
 .toTable(f"{database_name}.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## LATENCY Can be affected by: 
+# MAGIC 
+# MAGIC <li> 1. How data comes in (kafka, files)
+# MAGIC <li> 2. File listing (optimize your source files with incremental/file notifications)
+# MAGIC <li> 3. Cluster Configs (node types)
+# MAGIC <li> 4. Code logic
+# MAGIC <li> 5. Partitioning
+# MAGIC <li> 6. Spark Configs (like shuffle partitions)
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM real_time_iot_dashboard.bronze_sensors;
 
 # COMMAND ----------
 
@@ -183,6 +236,91 @@ if start_over == "Yes":
 history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
 
 display(history_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## Part 2: Streaming from Delta - with Stateful Aggregations
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC Streaming With Delta: https://docs.databricks.com/structured-streaming/delta-lake.html#language-python
+
+# COMMAND ----------
+
+# DBTITLE 1,Configure Databricks to Automatically RocksDB to Management State Scalably
+spark.conf.set(
+  "spark.sql.streaming.stateStore.providerClass",
+  "com.databricks.sql.streaming.state.RocksDBStateStoreProvider")
+
+# COMMAND ----------
+
+# DBTITLE 1,Adding Nuance - State Management / Late Arriving Data & Aggregations
+## Most data pipelines for real-time need efficient state management
+## This can add a bit of latency
+
+df_bronze_stateful = (spark.readStream.format("delta")
+  .option("withEventTimeOrder", "true") ## Ensure thats the even order processing is by event timestamp, not file modified timestamp
+  .option("maxFilesPerTrigger", 1)
+  .table(f"{database_name}.bronze_sensors")
+                      
+  .withWatermark("timestamp", "10 seconds") ## Can only be 10 seconds late
+     .groupBy(window("timestamp", "1 second").alias("EventWindow"))
+     .agg(avg("calories_burnt").alias("calories_burnt"), 
+          avg("miles_walked").alias("miles_walked"), 
+          avg("num_steps").alias("num_steps"), 
+         )
+     #.withColumn("id", uuidUdf()) ## Adding Surrrogate keys is more helpful in EDW workloads, and its automatic in delta with IDENTITY :)
+     .selectExpr("date_trunc('second', EventWindow.start) AS EventStart", 
+                 "date_trunc('second', EventWindow.end) AS EventEnd",
+                 "*", 
+                 "date_trunc('day', EventWindow.start) AS Date")
+                  )
+
+# COMMAND ----------
+
+if start_over == "Yes":
+  dbutils.fs.rm(checkpoint_location_stateful, recurse=True)
+
+# COMMAND ----------
+
+## Start with 2x Number of Cores, for smaller workloads, make it smaller for faster streams
+spark.conf.set("spark.sql.shuffle.partitions", "1")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC CREATE OR REPLACE TABLE real_time_iot_dashboard.silver_sensors_stateful
+# MAGIC (EventStart timestamp,
+# MAGIC EventEnd timestamp,
+# MAGIC EventWindow Struct<start:timestamp, end:timestamp>,
+# MAGIC calories_burnt decimal(14,4),
+# MAGIC miles_walked decimal(14,4),
+# MAGIC num_steps decimal(14,4),
+# MAGIC Date timestamp
+# MAGIC )
+# MAGIC PARTITIONED BY (Date)
+# MAGIC ;
+
+# COMMAND ----------
+
+# DBTITLE 1,Write to Silver Stateful Table
+## with DBR 11.2+, Order insertion clustering is automatic!
+
+(df_bronze_stateful
+.writeStream
+.format("delta")
+.outputMode("append")
+.option("checkpointLocation", checkpoint_location_stateful)
+.option("mergeSchema", "true")
+.trigger(processingTime = '2 seconds') ## once=True, availableNow=True, processingTime = '5 minutes', continuous ='1 minute'
+.partitionBy("Date") ## DO NOT OVER PARTITION, but partitions when you need to (data deletion, etc.)
+.toTable(f"real_time_iot_dashboard.silver_sensors_stateful") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
+)
 
 # COMMAND ----------
 
@@ -224,7 +362,15 @@ display(history_df)
 
 # MAGIC %md
 # MAGIC 
-# MAGIC <b> Do we need to optimize our table? 
+# MAGIC <b> Q: Do we need to optimize our table with OPTIMZE/ZORDER? 
+# MAGIC   
+# MAGIC <li> A: If under 1 min SLA, probably not a good idea. Just partition on a date range and delete older data to keep table small
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ## Part 3: Streaming + MERGE for EDW Analytical Pipelines
 
 # COMMAND ----------
 
@@ -253,12 +399,12 @@ display(history_df)
 # COMMAND ----------
 
 # DBTITLE 1,Stream with Delta options
-df_bronze = (
+df_bronze_merge = (
   spark.readStream
 #.option("startingVersion", "1") ## Or .option("startingTimestamp", "2018-10-18") You can optionally explicitly state which version to start streaming from
 .option("ignoreChanges", "true") ## .option("ignoreDeletes", "true")
 #.option("useChangeFeed", "true")
-.option("maxFilesPerTrigger", 100000) ## Optional - FIFO processing
+.option("maxFilesPerTrigger", 100) ## Optional - FIFO processing
 .table(f"{database_name}.bronze_sensors")
 )
 
@@ -269,12 +415,6 @@ df_bronze = (
 # MAGIC %md
 # MAGIC 
 # MAGIC ## If your data has updates and is not sub-second latency, you can use Structured Streaming to MERGE anything at any clip!
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC 
-# MAGIC <b> WARNING: DO NOT USE MERGE FOR REAL-TIME PIPELINES - use watermarking instead </b>
 
 # COMMAND ----------
 
@@ -365,11 +505,10 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
 # DBTITLE 1,Delete checkpoint - each stream has 1 checkpoint
 dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 
-
 # COMMAND ----------
 
 # DBTITLE 1,Write Stream as often as you want
-(df_bronze
+(df_bronze_merge
 .writeStream
 .option("checkpointLocation", checkpoint_location_silver)
 .trigger(processingTime='3 seconds') ## processingTime='1 minute' -- Now we can run this merge every minute!

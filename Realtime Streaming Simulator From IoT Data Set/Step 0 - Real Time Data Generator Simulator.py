@@ -25,12 +25,14 @@ df = spark.read.json(source_data_path).orderBy("timestamp")
 dbutils.widgets.text("Second Frequency (Integer)", "1")
 dbutils.widgets.text("Starting Record Batch Size", "1000")
 dbutils.widgets.dropdown("Start Over Each Run", "Yes", ["Yes", "No"])
+dbutils.widgets.text("Records Per Trigger (Integer):", "1000")
 
 start_over = dbutils.widgets.get("Start Over Each Run")
 drop_periodicity = int(dbutils.widgets.get("Second Frequency (Integer)"))
 start_batch_size = int(dbutils.widgets.get("Starting Record Batch Size"))
+records_per_trigger = int(dbutils.widgets.get("Records Per Trigger (Integer):"))
 
-print(f"Generating Data Every {drop_periodicity} seconds... starting with {start_batch_size} records. \n Start over each run?: {start_over}")
+print(f"Generating {records_per_trigger} records every {drop_periodicity} seconds starting with {start_batch_size} records. \n Start over each run?: {start_over}")
 
 # COMMAND ----------
 
@@ -62,6 +64,28 @@ initial_batch = prepped_df.filter(col("row_num") <= lit(start_batch_size)).selec
 
 initial_batch.write.text(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/initial_batch.json")
 
+
+# COMMAND ----------
+
+
+import json
+
+incremental_df = prepped_df.filter(col("row_num") <= lit(100)).coalesce(1).orderBy("row_num").select("value")
+
+
+# COMMAND ----------
+
+incremental_df.coalesce(1).write.mode("overwrite").json(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/test.json")
+
+# COMMAND ----------
+
+dbutils.fs.put(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/test.txt", dumped_array, True)
+
+# COMMAND ----------
+
+df_test = spark.read.text("dbfs:/Filestore/real-time-data-demo/iot_dashboard/test.json").select("value:`value`")
+
+display(df_test)
 
 # COMMAND ----------
 
