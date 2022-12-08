@@ -53,7 +53,7 @@ LIMIT 1000
 
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors_stateful
 AS 
-SELECT *,
+SELECT EventStart as timstamp,
 -- Number of Steps
 (avg(`num_steps`) OVER (
         ORDER BY EventStart
