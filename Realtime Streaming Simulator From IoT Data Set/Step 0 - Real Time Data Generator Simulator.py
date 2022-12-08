@@ -62,43 +62,32 @@ if start_over == "Yes":
 ## Write initial batch size
 initial_batch = prepped_df.filter(col("row_num") <= lit(start_batch_size)).select("value").coalesce(1)
 
-initial_batch.write.text(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/initial_batch.json")
+initial_batch.write.text(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/initial_batch_0_{start_batch_size}.json")
 
-
-# COMMAND ----------
-
-
-import json
-
-incremental_df = prepped_df.filter(col("row_num") <= lit(100)).coalesce(1).orderBy("row_num").select("value")
-
-
-# COMMAND ----------
-
-incremental_df.coalesce(1).write.mode("overwrite").json(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/test.json")
-
-# COMMAND ----------
-
-dbutils.fs.put(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/test.txt", dumped_array, True)
-
-# COMMAND ----------
-
-df_test = spark.read.text("dbfs:/Filestore/real-time-data-demo/iot_dashboard/test.json").select("value:`value`")
-
-display(df_test)
 
 # COMMAND ----------
 
 # DBTITLE 1,Load Incremental Records in order of timestamp after initial batch
-incremental_df = prepped_df.filter(col("row_num") > lit(start_batch_size)).coalesce(1).orderBy("row_num").select("value", "row_num").collect()
+max_val = prepped_df.agg(max("row_num")).collect()[0][0]
+batches = list(range(start_batch_size, max_val, records_per_trigger))
 
 
-for i, j in enumerate(incremental_df):
+coalesced_prepped_df = prepped_df.coalesce(1)
+
+for i, j in enumerate(batches):
   
-  print(j)
-  rec = j[0]
-  rec_name = f"rec_{i}"
+  print(i)
+  print(f"Dropping batch {i} from records {j} --> {batches[i+1]}")
+  
+  start_rec = j
+  end_rec = batches[i+1]
 
-  dbutils.fs.put(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/{rec_name}.json", rec, True)
+  incremental_df = (coalesced_prepped_df
+                  .filter((col("row_num") > lit(start_rec)) & (col("row_num") <= lit(end_rec)))
+                  .coalesce(1)
+                  .orderBy("row_num").select("value")
+                 )
+  incremental_df.write.text(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/batch_{i}_from_{start_rec}_to_{end_rec}.json")
+  #dbutils.fs.put(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/{rec_name}.json", rec, True)
   
   time.sleep(drop_periodicity)

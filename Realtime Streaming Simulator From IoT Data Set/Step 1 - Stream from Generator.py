@@ -299,7 +299,7 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
-## Start with 2x Number of Cores, for smaller workloads, make it smaller for faster streams
+## Start with 2x Number of Cores, for smaller workloads, make it smaller for smaller/faster streams
 spark.conf.set("spark.sql.shuffle.partitions", "1")
 
 # COMMAND ----------
@@ -333,42 +333,6 @@ spark.conf.set("spark.sql.shuffle.partitions", "1")
 .partitionBy("Date") ## DO NOT OVER PARTITION, but partitions when you need to (data deletion, etc.)
 .toTable(f"real_time_iot_dashboard.silver_sensors_stateful") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
-
-# COMMAND ----------
-
-# DBTITLE 1,Pro Tip: Use Transaction Log Metadata to build intelligent Data Apps
-# MAGIC %sql
-# MAGIC 
-# MAGIC 
-# MAGIC WITH log AS
-# MAGIC (DESCRIBE HISTORY real_time_iot_dashboard.bronze_sensors
-# MAGIC ),
-# MAGIC state AS (
-# MAGIC SELECT
-# MAGIC version,
-# MAGIC timestamp,
-# MAGIC operation
-# MAGIC FROM log
-# MAGIC WHERE (timestamp >= current_timestamp() - INTERVAL '24 hours')
-# MAGIC AND operation IN ('MERGE', 'WRITE', 'DELETE', 'STREAMING UPDATE')
-# MAGIC ORDER By version DESC
-# MAGIC ),
-# MAGIC comparison AS (
-# MAGIC SELECT DISTINCT
-# MAGIC s1.version,
-# MAGIC s1.timestamp,
-# MAGIC s1.operation,
-# MAGIC LAG(version) OVER (ORDER BY version) AS Previous_Version,
-# MAGIC LAG(timestamp) OVER (ORDER BY timestamp) AS Previous_Timestamp
-# MAGIC FROM state AS s1
-# MAGIC ORDER BY version DESC)
-# MAGIC 
-# MAGIC SELECT
-# MAGIC date_trunc('hour', timestamp) AS HourBlock,
-# MAGIC AVG(timestamp::double - Previous_Timestamp::double) AS AvgUpdateFrequencyInSeconds
-# MAGIC FROM comparison
-# MAGIC GROUP BY date_trunc('hour', timestamp)
-# MAGIC ORDER BY HourBlock
 
 # COMMAND ----------
 
@@ -533,3 +497,39 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 silver_df = spark.sql(f"""SELECT * FROM {database_name}.silver_sensors;""")
 
 display(silver_df)
+
+# COMMAND ----------
+
+# DBTITLE 1,Pro Tip: Parse the Transaction Log to pass metadata back to dashboard
+# MAGIC %sql
+# MAGIC 
+# MAGIC 
+# MAGIC WITH log AS
+# MAGIC (DESCRIBE HISTORY real_time_iot_dashboard.bronze_sensors
+# MAGIC ),
+# MAGIC state AS (
+# MAGIC SELECT
+# MAGIC version,
+# MAGIC timestamp,
+# MAGIC operation
+# MAGIC FROM log
+# MAGIC WHERE (timestamp >= current_timestamp() - INTERVAL '24 hours')
+# MAGIC AND operation IN ('MERGE', 'WRITE', 'DELETE', 'STREAMING UPDATE')
+# MAGIC ORDER By version DESC
+# MAGIC ),
+# MAGIC comparison AS (
+# MAGIC SELECT DISTINCT
+# MAGIC s1.version,
+# MAGIC s1.timestamp,
+# MAGIC s1.operation,
+# MAGIC LAG(version) OVER (ORDER BY version) AS Previous_Version,
+# MAGIC LAG(timestamp) OVER (ORDER BY timestamp) AS Previous_Timestamp
+# MAGIC FROM state AS s1
+# MAGIC ORDER BY version DESC)
+# MAGIC 
+# MAGIC SELECT
+# MAGIC date_trunc('hour', timestamp) AS HourBlock,
+# MAGIC AVG(timestamp::double - Previous_Timestamp::double) AS AvgUpdateFrequencyInSeconds
+# MAGIC FROM comparison
+# MAGIC GROUP BY date_trunc('hour', timestamp)
+# MAGIC ORDER BY HourBlock

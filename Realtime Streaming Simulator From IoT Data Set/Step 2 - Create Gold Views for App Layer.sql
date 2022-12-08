@@ -24,9 +24,11 @@
 -- COMMAND ----------
 
 -- DBTITLE 1,Generate View with Heavy Logic
+-- We can decide to build directly on bronze or on silver for higher quality data
+
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors
 AS 
-SELECT *,
+SELECT timestamp,
 -- Number of Steps
 (avg(`num_steps`) OVER (
         ORDER BY timestamp
@@ -41,10 +43,11 @@ SELECT *,
           120 PRECEDING AND
           CURRENT ROW
       ))::float AS SmoothedMilesWalked120SecondMA --120 second moving average
-FROM real_time_iot_dashboard.bronze_sensors
+FROM real_time_iot_dashboard.silver_sensors
 -- Photon likes things this way for some reason
 WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 60)
-LIMIT 10000
+ORDER BY timestamp DESC
+LIMIT 1000
 
 -- COMMAND ----------
 
@@ -71,7 +74,8 @@ FROM real_time_iot_dashboard.silver_sensors_stateful
 WHERE EventStart::double >= ((SELECT MAX(EventStart)::double FROM real_time_iot_dashboard.silver_sensors_stateful) - 60)
 --Use partition pruning to ignore data as it ages
 AND Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
-LIMIT 10000
+ORDER BY EventStart DESC
+LIMIT 1000
 
 -- COMMAND ----------
 
@@ -82,7 +86,7 @@ LIMIT 10000
 -- MAGIC MIN(timestamp) AS EarliestTimestamp,
 -- MAGIC MAX(timestamp) AS MostRecentTimestamp,
 -- MAGIC MIN(timestamp) -  MAX(timestamp) AS TotalSecondsOfData
--- MAGIC FROM real_time_iot_dashboard.bronze_sensors
+-- MAGIC FROM real_time_iot_dashboard.silver_sensors
 
 -- COMMAND ----------
 
