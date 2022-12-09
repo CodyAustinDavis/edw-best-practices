@@ -42,7 +42,7 @@ SELECT timestamp,
         ROWS BETWEEN
           120 PRECEDING AND
           CURRENT ROW
-      ))::float AS SmoothedMilesWalked120SecondMA --120 second moving average
+      ))::float AS SmoothedNumSteps120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.silver_sensors
 -- Photon likes things this way for some reason
 WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 60)
