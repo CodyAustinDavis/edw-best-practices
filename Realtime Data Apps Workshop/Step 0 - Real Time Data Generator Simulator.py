@@ -42,12 +42,13 @@ import time
 
 # COMMAND ----------
 
+# DBTITLE 1,Sort Data to Drop files in order of timeframe to simulate real-time
 overSpec = Window.orderBy("timestamp")
 prepped_df = df.withColumn("row_num", row_number().over(overSpec))
 
 # COMMAND ----------
 
-dbutils.fs.rm(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/", recurse=True)
+dbutils.fs.rm(target_data_path, recurse=True)
 
 # COMMAND ----------
 
@@ -56,13 +57,13 @@ dbutils.fs.rm(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/", recurse=Tru
 
 if start_over == "Yes":
   print("Truncating and reloading source data...")
-  dbutils.fs.rm("dbfs:/Filestore/real-time-data-demo/iot_dashboard/", recurse=True)
+  dbutils.fs.rm(target_data_path, recurse=True)
 
   
 ## Write initial batch size
 initial_batch = prepped_df.filter(col("row_num") <= lit(start_batch_size)).select("value").coalesce(1)
 
-initial_batch.write.text(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/initial_batch_0_{start_batch_size}.json")
+initial_batch.write.text(f"{target_data_path}initial_batch_0_{start_batch_size}.json")
 
 
 # COMMAND ----------
@@ -87,7 +88,6 @@ for i, j in enumerate(batches):
                   .coalesce(1)
                   .orderBy("row_num").select("value")
                  )
-  incremental_df.write.text(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/batch_{i}_from_{start_rec}_to_{end_rec}.json")
-  #dbutils.fs.put(f"dbfs:/Filestore/real-time-data-demo/iot_dashboard/{rec_name}.json", rec, True)
+  incremental_df.write.text(f"{target_data_path}batch_{i}_from_{start_rec}_to_{end_rec}.json")
   
   time.sleep(drop_periodicity)
