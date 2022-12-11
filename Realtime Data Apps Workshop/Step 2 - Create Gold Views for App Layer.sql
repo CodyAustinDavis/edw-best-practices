@@ -71,7 +71,7 @@ SELECT EventStart as timstamp,
 FROM real_time_iot_dashboard.silver_sensors_stateful
 -- Photon likes things this way for some reason
 -- Use sort order / zorder file level pruning, usually on timestamp and/or lookup keys (like device_id, user_id)
-WHERE EventStart::double >= ((SELECT MAX(EventStart)::double FROM real_time_iot_dashboard.silver_sensors_stateful) - 60)
+WHERE EventStart::double >= ((SELECT MAX(EventStart)::double FROM real_time_iot_dashboard.silver_sensors_stateful) - 3600*24)
 --Use partition pruning to ignore data as it ages
 AND Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
 ORDER BY EventStart DESC
@@ -93,6 +93,7 @@ LIMIT 1000
 -- DBTITLE 1,Example of Dashboard Client Side Query
 SELECT * 
 FROM real_time_iot_dashboard.gold_sensors
+LIMIT 1000
 
 -- COMMAND ----------
 

@@ -236,7 +236,6 @@ if start_over == "Yes":
 # COMMAND ----------
 
 # DBTITLE 1,Watch the table update
-
 ## You can use this to see how often to trigger visuals directly in Dash!
 history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
 
@@ -269,10 +268,10 @@ spark.conf.set(
 
 df_bronze_stateful = (spark.readStream.format("delta")
   .option("withEventTimeOrder", "true") ## Ensure thats the even order processing is by event timestamp, not file modified timestamp
-  .option("maxFilesPerTrigger", 1)
+  #.option("maxFilesPerTrigger", 1)
   .table(f"{database_name}.bronze_sensors")
                       
-  .withWatermark("timestamp", "10 seconds") ## Can only be 10 seconds late
+  .withWatermark("timestamp", "30 seconds") ## Can only be 10 seconds late
   .groupBy(window("timestamp", "1 second").alias("EventWindow"))
      .agg(avg("calories_burnt").alias("calories_burnt"), 
           avg("miles_walked").alias("miles_walked"), 
