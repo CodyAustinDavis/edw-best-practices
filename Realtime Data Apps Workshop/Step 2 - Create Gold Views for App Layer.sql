@@ -43,11 +43,11 @@ SELECT timestamp,
           120 PRECEDING AND
           CURRENT ROW
       ))::float AS SmoothedNumSteps120SecondMA --120 second moving average
-FROM real_time_iot_dashboard.silver_sensors
+FROM real_time_iot_dashboard.bronze_sensors
 -- Photon likes things this way for some reason
-WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 60)
+WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600*24)
 ORDER BY timestamp DESC
-LIMIT 1000
+LIMIT 100000
 
 -- COMMAND ----------
 
@@ -86,7 +86,7 @@ LIMIT 1000
 -- MAGIC MIN(timestamp) AS EarliestTimestamp,
 -- MAGIC MAX(timestamp) AS MostRecentTimestamp,
 -- MAGIC MIN(timestamp) -  MAX(timestamp) AS TotalSecondsOfData
--- MAGIC FROM real_time_iot_dashboard.silver_sensors
+-- MAGIC FROM real_time_iot_dashboard.gold_sensors
 
 -- COMMAND ----------
 

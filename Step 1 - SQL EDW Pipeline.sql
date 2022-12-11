@@ -212,11 +212,19 @@ Order ZORDER cols in order of cardinality ascending
 
 */
 
-OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp);
+OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp, user_id, device_id);
 
 
 -- Truncate bronze batch once successfully loaded
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
+
+-- COMMAND ----------
+
+DESCRIBE HISTORY iot_dashboard.silver_sensors
+
+-- COMMAND ----------
+
+SELECT * FROM iot_dashboard.silver_sensors VERSION AS OF 1;
 
 -- COMMAND ----------
 

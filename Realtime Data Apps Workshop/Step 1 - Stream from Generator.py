@@ -100,6 +100,7 @@ dbutils.widgets.dropdown("StartOver", "Yes", ["No", "Yes"])
 
 start_over = dbutils.widgets.get("StartOver")
 
+
 print(f"Start Over?: {start_over}")
 
 # COMMAND ----------
@@ -116,7 +117,11 @@ database_name = "real_time_iot_dashboard"
 # COMMAND ----------
 
 # DBTITLE 1,Look at Raw Data Source
-dbutils.fs.ls(file_source_location)
+paths_df = spark.createDataFrame(dbutils.fs.ls(file_source_location))
+
+display(paths_df)
+
+paths_df.createOrReplaceTempView("all_files")
 
 # COMMAND ----------
 
@@ -150,11 +155,6 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
-# DBTITLE 1,Let Autoloader Sample files for schema inference - backfill interval can refresh this inference
-spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 10) ## 1000 is default
-
-# COMMAND ----------
-
 # DBTITLE 1,Re-infer schema if starting over
 if start_over == "Yes":
   dbutils.fs.rm(autoloader_schema_location, recurse=True)
@@ -168,14 +168,14 @@ df_raw = (spark
      .readStream
      .format("cloudFiles") ## csv, json, binary, text, parquet, avro
      .option("cloudFiles.format", "text")
-     .option("cloudFiles.useIncrementalListing", "true")
+     #.option("cloudFiles.useIncrementalListing", "true")
      #.option("cloudFiles.useNotifications", "true")
      .option("cloudFiles.schemaLocation", autoloader_schema_location)
      #.option("schema", inputSchema)
      #.option("modifiedAfter", timestampString) ## option
      #.option("cloudFiles.maxFilesPerTrigger", 100000) ## maxBytesPerTrigger, 10mb
      #.option("pathGlobFilter", "*.json*") ## Only certain files ## regex expr
-     #.option("ignoreChanges", "true")
+     .option("ignoreChanges", "true")
      #.option("ignoreDeletes", "true")
      #.option("latestFirst", "false")
      .load(file_source_location)
@@ -235,13 +235,6 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
-# DBTITLE 1,Look at Streaming Results
-# MAGIC %sql
-# MAGIC 
-# MAGIC SELECT * FROM real_time_iot_dashboard.bronze_sensors;
-
-# COMMAND ----------
-
 # DBTITLE 1,Watch the table update
 
 ## You can use this to see how often to trigger visuals directly in Dash!
@@ -280,7 +273,7 @@ df_bronze_stateful = (spark.readStream.format("delta")
   .table(f"{database_name}.bronze_sensors")
                       
   .withWatermark("timestamp", "10 seconds") ## Can only be 10 seconds late
-     .groupBy(window("timestamp", "1 second").alias("EventWindow"))
+  .groupBy(window("timestamp", "1 second").alias("EventWindow"))
      .agg(avg("calories_burnt").alias("calories_burnt"), 
           avg("miles_walked").alias("miles_walked"), 
           avg("num_steps").alias("num_steps"), 
@@ -333,6 +326,12 @@ spark.conf.set("spark.sql.shuffle.partitions", "1")
 .partitionBy("Date") ## DO NOT OVER PARTITION, but partitions when you need to (data deletion, etc.)
 .toTable(f"real_time_iot_dashboard.silver_sensors_stateful") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM real_time_iot_dashboard.silver_sensors_stateful
 
 # COMMAND ----------
 
