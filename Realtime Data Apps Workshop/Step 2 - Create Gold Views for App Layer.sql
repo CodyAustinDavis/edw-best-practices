@@ -59,15 +59,14 @@ SELECT timestamp,
       ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.bronze_sensors
 -- Photon likes things this way for some reason
-WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600*24)
+WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600*4)
 ORDER BY timestamp DESC
-LIMIT 100000
 
 -- COMMAND ----------
 
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors_stateful
 AS 
-SELECT EventStart as timstamp,
+SELECT EventStart as timestamp,
 -- Number of Steps
 (avg(`num_steps`) OVER (
         ORDER BY EventStart
