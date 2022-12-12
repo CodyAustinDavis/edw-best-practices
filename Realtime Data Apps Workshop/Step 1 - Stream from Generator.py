@@ -16,7 +16,7 @@
 # MAGIC   
 # MAGIC <li> 2. Bronze (or even raw) to Silver Streaming with Watermarking
 # MAGIC   
-# MAGIC <li> 3. Bronze to Silver Streaming with MERGE (for less real-time, more EDW like workloads)
+# MAGIC <li> 3. Bronze to Silver Streaming with foreachBatch AND MERGE (for less real-time, more EDW like workloads)
 # MAGIC   
 # MAGIC 
 # MAGIC ---
@@ -25,7 +25,7 @@
 # MAGIC 
 # MAGIC <b> Database: </b> real_time_iot_dashboard
 # MAGIC 
-# MAGIC <b> Tables: </b> silver_sensors, silver_users 
+# MAGIC <b> Tables: </b> bronze_sensors, silver_sensors, silver_sensors_stateful
 # MAGIC 
 # MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
 
@@ -47,7 +47,7 @@
 
 # MAGIC %md
 # MAGIC 
-# MAGIC ## Part 1: Raw to Bronze with Watermarking
+# MAGIC ## Part 1: Raw to Bronze with Autoloader
 
 # COMMAND ----------
 
@@ -97,29 +97,28 @@
 
 # DBTITLE 1,Input Parameters
 dbutils.widgets.dropdown("StartOver", "Yes", ["No", "Yes"])
-
 start_over = dbutils.widgets.get("StartOver")
-
-
 print(f"Start Over?: {start_over}")
 
 # COMMAND ----------
 
 # DBTITLE 1,Do not edit - Standard file paths
 ## Output path of real-time data generator
+
 file_source_location = "dbfs:/Filestore/real-time-data-demo/iot_dashboard/"
 checkpoint_location = f"dbfs:/FileStore/real-time-data-demo-checkpoints/bronze"
+database_name = "real_time_iot_dashboard"
+
+## Other Params
 checkpoint_location_stateful = f"dbfs:/FileStore/real-time-data-demo-checkpoints/silver_stateful"
 checkpoint_location_silver = f"dbfs:/FileStore/real-time-data-demo-checkpoints/silver"
 autoloader_schema_location = f"dbfs:/FileStore/real-time-data-demo-schema_checkpoints/AutoloaderDemoSchema/"
-database_name = "real_time_iot_dashboard"
 
 # COMMAND ----------
 
 # DBTITLE 1,Look at Raw Data Source
 paths_df = spark.createDataFrame(dbutils.fs.ls(file_source_location))
-display(paths_df)
-paths_df.createOrReplaceTempView("all_files")
+display(paths_df.orderBy(desc(col("modificationTime"))))
 
 # COMMAND ----------
 
@@ -142,9 +141,9 @@ spark.sql(f"""CREATE DATABASE IF NOT EXISTS {database_name};""")
 
 # COMMAND ----------
 
-# DBTITLE 1,Start Over
+# DBTITLE 1,Start Over - Truncate and Reload
 if start_over == "Yes":
-  
+ 
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.bronze_sensors""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_sensors""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_sensors_stateful""")
@@ -153,7 +152,7 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
-# DBTITLE 1,Basic Version - No State Management - Read Stream with Autoloader - LOTS of Options for any type of data
+# DBTITLE 1,Read Stream with Autoloader
 ## Why use autoloader? -- cloudFiles
 
 df_raw = (spark
@@ -214,6 +213,14 @@ if start_over == "Yes":
 
 # COMMAND ----------
 
+# DBTITLE 1,Watch the table update
+## You can use this to see how often to trigger visuals directly in Dash!
+history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
+
+display(history_df)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC 
 # MAGIC ## LATENCY Can be affected by: 
@@ -224,14 +231,6 @@ if start_over == "Yes":
 # MAGIC <li> 4. Code logic
 # MAGIC <li> 5. Partitioning
 # MAGIC <li> 6. Spark Configs (like shuffle partitions)
-
-# COMMAND ----------
-
-# DBTITLE 1,Watch the table update
-## You can use this to see how often to trigger visuals directly in Dash!
-history_df = spark.sql(f"""DESCRIBE HISTORY {database_name}.bronze_sensors;""")
-
-display(history_df)
 
 # COMMAND ----------
 
@@ -247,10 +246,25 @@ display(history_df)
 
 # COMMAND ----------
 
+# DBTITLE 1,Define Target Silver Table
+# MAGIC %sql
+# MAGIC 
+# MAGIC CREATE OR REPLACE TABLE real_time_iot_dashboard.silver_sensors_stateful
+# MAGIC (EventStart timestamp,
+# MAGIC EventEnd timestamp,
+# MAGIC EventWindow Struct<start:timestamp, end:timestamp>,
+# MAGIC calories_burnt decimal(14,4),
+# MAGIC miles_walked decimal(14,4),
+# MAGIC num_steps decimal(14,4),
+# MAGIC Date timestamp
+# MAGIC )
+# MAGIC PARTITIONED BY (Date)
+# MAGIC ;
+
+# COMMAND ----------
+
 # DBTITLE 1,Configure Databricks to Automatically RocksDB to Management State Scalably
-spark.conf.set(
-  "spark.sql.streaming.stateStore.providerClass",
-  "com.databricks.sql.streaming.state.RocksDBStateStoreProvider")
+spark.conf.set("spark.sql.streaming.stateStore.providerClass","com.databricks.sql.streaming.state.RocksDBStateStoreProvider")
 
 # COMMAND ----------
 
@@ -278,29 +292,9 @@ df_bronze_stateful = (spark.readStream.format("delta")
 
 # COMMAND ----------
 
+# DBTITLE 1,Reprocess all data from Bronze
 if start_over == "Yes":
   dbutils.fs.rm(checkpoint_location_stateful, recurse=True)
-
-# COMMAND ----------
-
-## Start with 2x Number of Cores, for smaller workloads, make it smaller for smaller/faster streams
-spark.conf.set("spark.sql.shuffle.partitions", "1")
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC CREATE OR REPLACE TABLE real_time_iot_dashboard.silver_sensors_stateful
-# MAGIC (EventStart timestamp,
-# MAGIC EventEnd timestamp,
-# MAGIC EventWindow Struct<start:timestamp, end:timestamp>,
-# MAGIC calories_burnt decimal(14,4),
-# MAGIC miles_walked decimal(14,4),
-# MAGIC num_steps decimal(14,4),
-# MAGIC Date timestamp
-# MAGIC )
-# MAGIC PARTITIONED BY (Date)
-# MAGIC ;
 
 # COMMAND ----------
 
@@ -321,7 +315,6 @@ spark.conf.set("spark.sql.shuffle.partitions", "1")
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
 # MAGIC SELECT * FROM real_time_iot_dashboard.silver_sensors_stateful
 
 # COMMAND ----------
@@ -369,7 +362,7 @@ df_bronze_merge = (
   spark.readStream
 #.option("startingVersion", "1") ## Or .option("startingTimestamp", "2018-10-18") You can optionally explicitly state which version to start streaming from
 .option("ignoreChanges", "true") ## .option("ignoreDeletes", "true")
-#.option("useChangeFeed", "true")
+#.option("useChangeFeed", "true") ## Enables use change data feed
 .option("maxFilesPerTrigger", 100) ## Optional - FIFO processing
 .table(f"{database_name}.bronze_sensors")
 )
@@ -403,36 +396,6 @@ from pyspark.sql.window import Window
 
 def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   
-  """
-  #### Python way
-  silverDeltaTable = DeltaTable.forName(spark, f"{database_name}.silver_sensors")
-  
-  ## Delete duplicates in source if there are any 
-  
-  updatesDeDupedInMicroBatch = (microBatchDf
-                                .select("*", 
-                                   F.row_number().over(Window.partitionBy("Id", "user_id", "device_id", "timestamp").orderBy("timestamp")).alias("dupRank")
-                                       )
-                                .filter(col("dupRank") == lit("1")) ## Get only 1 most recent copy per row
-                               ) ## partition on natural key or pk for dups within a microBatch if there are any
-  
-  (silverDeltaTable.alias("target")
-  .merge(
-    updatesDeDupedInMicroBatch.distinct().alias("updates"),
-    "target.Id = updates.Id AND updates.user_id = target.user_id AND target.device_id = updates.device_id"
-        )
-   .whenMatchedUpdate(set =
-    {
-      "calories_burnt": "updates.calories_burnt",
-      "miles_walked": "updates.miles_walked",
-      "num_steps": "updates.num_steps",
-      "timestamp": "updates.timestamp"
-    }
-  )
-  .whenNotMatchedInsertAll()
-  .execute()
-  )
-  """
   ### SQL Way to do it inside the micro batch
   
   ## Register microbatch in SQL temp table and run merge using spark.sql
@@ -463,6 +426,39 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   
   ## optimize table after the merge for faster queries
   spark.sql(f"""OPTIMIZE {database_name}.silver_sensors ZORDER BY (timestamp)""")
+  
+  
+  """
+  #### Python way to do the same thing
+  silverDeltaTable = DeltaTable.forName(spark, f"{database_name}.silver_sensors")
+  
+  ## Delete duplicates in source if there are any 
+  
+  updatesDeDupedInMicroBatch = (microBatchDf
+                                .select("*", 
+                                   F.row_number().over(Window.partitionBy("Id", "user_id", "device_id", "timestamp").orderBy("timestamp")).alias("dupRank")
+                                       )
+                                .filter(col("dupRank") == lit("1")) ## Get only 1 most recent copy per row
+                               ) ## partition on natural key or pk for dups within a microBatch if there are any
+  
+  (silverDeltaTable.alias("target")
+  .merge(
+    updatesDeDupedInMicroBatch.distinct().alias("updates"),
+    "target.Id = updates.Id AND updates.user_id = target.user_id AND target.device_id = updates.device_id"
+        )
+   .whenMatchedUpdate(set =
+    {
+      "calories_burnt": "updates.calories_burnt",
+      "miles_walked": "updates.miles_walked",
+      "num_steps": "updates.num_steps",
+      "timestamp": "updates.timestamp"
+    }
+  )
+  .whenNotMatchedInsertAll()
+  .execute()
+  )
+  """
+  
   
   return
 
