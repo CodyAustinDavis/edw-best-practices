@@ -118,9 +118,7 @@ database_name = "real_time_iot_dashboard"
 
 # DBTITLE 1,Look at Raw Data Source
 paths_df = spark.createDataFrame(dbutils.fs.ls(file_source_location))
-
-display(paths_df)
-
+display(paths_df
 paths_df.createOrReplaceTempView("all_files")
 
 # COMMAND ----------
@@ -197,7 +195,7 @@ df_raw = (spark
 # COMMAND ----------
 
 # DBTITLE 1,Display a Stream for testing
-display(df_raw)
+#display(df_raw)
 
 # COMMAND ----------
 

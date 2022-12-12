@@ -42,7 +42,21 @@ SELECT timestamp,
         ROWS BETWEEN
           120 PRECEDING AND
           CURRENT ROW
-      ))::float AS SmoothedNumSteps120SecondMA --120 second moving average
+      ))::float AS SmoothedNumSteps120SecondMA,--120 second moving average,
+-- Calories Burnt
+(avg(`calories_burnt`) OVER (
+        ORDER BY timestamp
+        ROWS BETWEEN
+          30 PRECEDING AND
+          CURRENT ROW
+      )) ::float AS SmoothedCaloriesBurnt30SecondMA, -- 30 second moving average
+     
+(avg(`calories_burnt`) OVER (
+        ORDER BY timestamp
+        ROWS BETWEEN
+          120 PRECEDING AND
+          CURRENT ROW
+      ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.bronze_sensors
 -- Photon likes things this way for some reason
 WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600*24)
