@@ -11,6 +11,10 @@
 
 # COMMAND ----------
 
+from pyspark.sql.functions import *
+
+# COMMAND ----------
+
 # DBTITLE 1,Define Source and Sink Paths
 source_data_path = "/databricks-datasets/iot-stream/data-device/"
 target_data_path =  "dbfs:/Filestore/real-time-data-demo/iot_dashboard/"

@@ -118,7 +118,7 @@ database_name = "real_time_iot_dashboard"
 
 # DBTITLE 1,Look at Raw Data Source
 paths_df = spark.createDataFrame(dbutils.fs.ls(file_source_location))
-display(paths_df
+display(paths_df)
 paths_df.createOrReplaceTempView("all_files")
 
 # COMMAND ----------
@@ -150,12 +150,6 @@ if start_over == "Yes":
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_sensors_stateful""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.bronze_users""")
   spark.sql(f"""DROP TABLE IF EXISTS {database_name}.silver_users""")
-
-# COMMAND ----------
-
-# DBTITLE 1,Re-infer schema if starting over
-if start_over == "Yes":
-  dbutils.fs.rm(autoloader_schema_location, recurse=True)
 
 # COMMAND ----------
 
