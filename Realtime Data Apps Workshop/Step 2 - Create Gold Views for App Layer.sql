@@ -64,13 +64,6 @@ ORDER BY timestamp DESC
 
 -- COMMAND ----------
 
--- MAGIC %python
--- MAGIC 
--- MAGIC spark.conf.set("spark.databricks.photon.sort.enabled", "true")
--- MAGIC spark.conf.set("spark.databricks.photon.window.enabled", "true")
-
--- COMMAND ----------
-
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors_stateful
 AS 
 SELECT EventStart as timestamp,
@@ -104,17 +97,6 @@ LIMIT 1000
 -- MAGIC %sql
 -- MAGIC 
 -- MAGIC SELECT * FROm real_time_iot_dashboard.gold_sensors_stateful
-
--- COMMAND ----------
-
--- MAGIC %sql
--- MAGIC 
--- MAGIC SELECT 
--- MAGIC COUNT(0) AS Records,
--- MAGIC MIN(timestamp) AS EarliestTimestamp,
--- MAGIC MAX(timestamp) AS MostRecentTimestamp,
--- MAGIC MIN(timestamp) -  MAX(timestamp) AS TotalSecondsOfData
--- MAGIC FROM real_time_iot_dashboard.gold_sensors
 
 -- COMMAND ----------
 
