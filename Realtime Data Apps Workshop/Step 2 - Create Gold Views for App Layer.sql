@@ -99,7 +99,7 @@ LIMIT 200
 
 -- MAGIC %sql
 -- MAGIC 
--- MAGIC SELECT * FROm real_time_iot_dashboard.gold_sensors_stateful
+-- MAGIC SELECT * FROM real_time_iot_dashboard.gold_sensors_stateful
 
 -- COMMAND ----------
 

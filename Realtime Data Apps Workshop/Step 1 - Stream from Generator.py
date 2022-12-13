@@ -5,9 +5,8 @@
 # MAGIC 
 # MAGIC ---
 # MAGIC 
-# MAGIC <span style="color:#1577D6"> **Overview**: This notebook will provide a broad overview on some key practices for streaming data from files using autoloader, streaming to and from delta, and unifying batch and streaming MERGE workloads
+# MAGIC **Overview**: This notebook will provide a broad overview on some key practices for streaming data from files using autoloader, streaming to and from delta, and unifying batch and streaming MERGE workloads
 # MAGIC 
-# MAGIC </span>
 # MAGIC ---
 # MAGIC 
 # MAGIC ## 3 Parts: 
@@ -59,6 +58,11 @@
 # MAGIC   
 # MAGIC <li> 2. Streaming Best Practices: https://docs.databricks.com/structured-streaming/production.html
 # MAGIC   
+
+# COMMAND ----------
+
+# DBTITLE 1,Shuffle Partitions to Increase or Decrease Parallelism (2-4x cluster cores)
+spark.conf.set("spark.sql.shuffle.partitions", "32")
 
 # COMMAND ----------
 
@@ -116,16 +120,16 @@ autoloader_schema_location = f"dbfs:/FileStore/real-time-data-demo-schema_checkp
 
 # COMMAND ----------
 
-# DBTITLE 1,Look at Raw Data Source
-paths_df = spark.createDataFrame(dbutils.fs.ls(file_source_location))
-display(paths_df.orderBy(desc(col("modificationTime"))))
-
-# COMMAND ----------
-
 # DBTITLE 1,Imports
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import uuid
+
+# COMMAND ----------
+
+# DBTITLE 1,Look at Raw Data Source
+paths_df = spark.createDataFrame(dbutils.fs.ls(file_source_location))
+display(paths_df.orderBy(desc(col("modificationTime"))))
 
 # COMMAND ----------
 
@@ -199,7 +203,7 @@ if start_over == "Yes":
 # COMMAND ----------
 
 # DBTITLE 1,Write Stream -- same as any other stream
-## with DBR 11.2+, Order insertion clustering is automatic!
+## with DBR 11.2+, insertion order clustering is automatic!
 
 (df_raw
  .withColumn("date", date_trunc('day', col("timestamp")))
@@ -473,7 +477,7 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 (df_bronze_merge
 .writeStream
 .option("checkpointLocation", checkpoint_location_silver)
-.trigger(processingTime='3 seconds') ## processingTime='1 minute' -- Now we can run this merge every minute!
+.trigger(processingTime='2 seconds') ## processingTime='1 minute' -- Now we can run this merge every minute!
 .foreachBatch(mergeStatementForMicroBatch)
 .start()
 )
@@ -483,39 +487,3 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 silver_df = spark.sql(f"""SELECT * FROM {database_name}.silver_sensors;""")
 
 display(silver_df)
-
-# COMMAND ----------
-
-# DBTITLE 1,Pro Tip: Parse the Transaction Log to pass metadata back to dashboard
-# MAGIC %sql
-# MAGIC 
-# MAGIC 
-# MAGIC WITH log AS
-# MAGIC (DESCRIBE HISTORY real_time_iot_dashboard.bronze_sensors
-# MAGIC ),
-# MAGIC state AS (
-# MAGIC SELECT
-# MAGIC version,
-# MAGIC timestamp,
-# MAGIC operation
-# MAGIC FROM log
-# MAGIC WHERE (timestamp >= current_timestamp() - INTERVAL '24 hours')
-# MAGIC AND operation IN ('MERGE', 'WRITE', 'DELETE', 'STREAMING UPDATE')
-# MAGIC ORDER By version DESC
-# MAGIC ),
-# MAGIC comparison AS (
-# MAGIC SELECT DISTINCT
-# MAGIC s1.version,
-# MAGIC s1.timestamp,
-# MAGIC s1.operation,
-# MAGIC LAG(version) OVER (ORDER BY version) AS Previous_Version,
-# MAGIC LAG(timestamp) OVER (ORDER BY timestamp) AS Previous_Timestamp
-# MAGIC FROM state AS s1
-# MAGIC ORDER BY version DESC)
-# MAGIC 
-# MAGIC SELECT
-# MAGIC date_trunc('hour', timestamp) AS HourBlock,
-# MAGIC AVG(timestamp::double - Previous_Timestamp::double) AS AvgUpdateFrequencyInSeconds
-# MAGIC FROM comparison
-# MAGIC GROUP BY date_trunc('hour', timestamp)
-# MAGIC ORDER BY HourBlock

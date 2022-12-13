@@ -11,6 +11,10 @@
 
 # COMMAND ----------
 
+spark.conf.set("spark.sql.shuffle.partitions", "32")
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 
 # COMMAND ----------
