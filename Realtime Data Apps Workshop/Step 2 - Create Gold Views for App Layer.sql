@@ -33,62 +33,70 @@ SELECT timestamp,
 (avg(`num_steps`) OVER (
         ORDER BY timestamp
         ROWS BETWEEN
-          30 PRECEDING AND
+          15 PRECEDING AND
           CURRENT ROW
       )) ::float AS SmoothedNumSteps30SecondMA, -- 30 second moving average
      
 (avg(`num_steps`) OVER (
         ORDER BY timestamp
         ROWS BETWEEN
-          120 PRECEDING AND
+          60 PRECEDING AND
           CURRENT ROW
       ))::float AS SmoothedNumSteps120SecondMA,--120 second moving average,
 -- Calories Burnt
 (avg(`calories_burnt`) OVER (
         ORDER BY timestamp
         ROWS BETWEEN
-          30 PRECEDING AND
+          15 PRECEDING AND
           CURRENT ROW
       )) ::float AS SmoothedCaloriesBurnt30SecondMA, -- 30 second moving average
      
 (avg(`calories_burnt`) OVER (
         ORDER BY timestamp
         ROWS BETWEEN
-          120 PRECEDING AND
+          60 PRECEDING AND
           CURRENT ROW
       ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.bronze_sensors
 -- Photon likes things this way for some reason
-WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600*4)
+WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600)
 ORDER BY timestamp DESC
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC 
+-- MAGIC spark.conf.set("spark.databricks.photon.sort.enabled", "true")
+-- MAGIC spark.conf.set("spark.databricks.photon.window.enabled", "true")
 
 -- COMMAND ----------
 
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors_stateful
 AS 
 SELECT EventStart as timestamp,
+num_steps,
 -- Number of Steps
 (avg(`num_steps`) OVER (
         ORDER BY EventStart
         ROWS BETWEEN
           30 PRECEDING AND
           CURRENT ROW
-      )) ::float AS SmoothedNumSteps30SecondMA, -- 30 second moving average
-     
-(avg(`num_steps`) OVER (
-        ORDER BY EventStart
-        ROWS BETWEEN
-          120 PRECEDING AND
-          CURRENT ROW
-      ))::float AS SmoothedNumSteps120SecondMA --120 second moving average
-FROM real_time_iot_dashboard.silver_sensors_stateful
+      )) ::float AS SmoothedNumSteps30SecondMA -- 30 second moving average
+FROM real_time_iot_dashboard.silver_sensors_stateful ss
 -- Photon likes things this way for some reason
 -- Use sort order / zorder file level pruning, usually on timestamp and/or lookup keys (like device_id, user_id)
-WHERE EventStart::double >= ((SELECT MAX(EventStart)::double FROM real_time_iot_dashboard.silver_sensors_stateful) - 3600*24)
+WHERE
 --Use partition pruning to ignore data as it ages
-AND Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
+ss.Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
+AND ss.EventStart >= ((SELECT MAX(EventStart) FROM real_time_iot_dashboard.silver_sensors_stateful) - INTERVAL '1 HOUR')
 ORDER BY EventStart DESC
 LIMIT 1000
+
+-- COMMAND ----------
+
+-- MAGIC %sql
+-- MAGIC 
+-- MAGIC SELECT * FROm real_time_iot_dashboard.gold_sensors_stateful
 
 -- COMMAND ----------
 
@@ -107,10 +115,6 @@ LIMIT 1000
 SELECT * 
 FROM real_time_iot_dashboard.gold_sensors
 LIMIT 1000
-
--- COMMAND ----------
-
-SELECT * FROM real_time_iot_dashboard.gold_sensors_stateful
 
 -- COMMAND ----------
 
