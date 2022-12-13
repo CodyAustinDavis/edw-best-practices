@@ -107,15 +107,6 @@ LIMIT 1000
 
 -- COMMAND ----------
 
--- DBTITLE 1,Example: Generate Query from Dashboard Engine
---This ensure the data prunes all data older than needed depending on the use case
-
-SELECT * FROM real_time_iot_dashboard.gold_sensors
-WHERE timestamp >= (current_timestamp() - INTERVAL '1 hour')
-AND user_id = 1;
-
--- COMMAND ----------
-
 -- DBTITLE 1,Embed this into a Dash Callback to create automatically refreshing tables that trigger when the table updates
 WITH log AS
 (DESCRIBE HISTORY real_time_iot_dashboard.bronze_sensors
