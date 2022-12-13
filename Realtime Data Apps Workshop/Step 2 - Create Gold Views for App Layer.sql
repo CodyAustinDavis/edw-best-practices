@@ -74,17 +74,24 @@ ORDER BY timestamp DESC
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors_stateful
 AS 
 SELECT EventStart as timestamp,
-num_steps,
--- Number of Steps
+num_steps AS SmoothedNumSteps30SecondMA, -- 30 second moving average
+     
 (avg(`num_steps`) OVER (
         ORDER BY EventStart
         ROWS BETWEEN
-          30 PRECEDING AND
+          60 PRECEDING AND
           CURRENT ROW
-      )) ::float AS SmoothedNumSteps30SecondMA -- 30 second moving average
+      ))::float AS SmoothedNumSteps120SecondMA,--120 second moving average,
+-- Calories Burnt
+calories_burnt AS SmoothedCaloriesBurnt30SecondMA, -- 30 second moving average
+     
+(avg(`calories_burnt`) OVER (
+        ORDER BY EventStart
+        ROWS BETWEEN
+          60 PRECEDING AND
+          CURRENT ROW
+      ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.silver_sensors_stateful ss
--- Photon likes things this way for some reason
--- Use sort order / zorder file level pruning, usually on timestamp and/or lookup keys (like device_id, user_id)
 WHERE
 --Use partition pruning to ignore data as it ages
 ss.Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
