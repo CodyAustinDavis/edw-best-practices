@@ -28,6 +28,9 @@
 
 CREATE OR REPLACE VIEW real_time_iot_dashboard.gold_sensors
 AS 
+(
+WITH water_mark AS ((SELECT MAX(timestamp) FROM real_time_iot_dashboard.bronze_sensors))
+
 SELECT timestamp,
 -- Number of Steps
 (avg(`num_steps`) OVER (
@@ -58,9 +61,9 @@ SELECT timestamp,
           CURRENT ROW
       ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.bronze_sensors
--- Photon likes things this way for some reason
-WHERE timestamp >= ((SELECT MAX(timestamp) FROM real_time_iot_dashboard.bronze_sensors) - INTERVAL '15 MINUTES')
+WHERE timestamp >= ((SELECT * FROM water_mark) - INTERVAL '15 MINUTES') -- In real time, you would use current_timestamp, but this is synthetic old data
 ORDER BY timestamp DESC
+)
 
 -- COMMAND ----------
 
@@ -72,7 +75,7 @@ num_steps AS SmoothedNumSteps30SecondMA, -- 30 second moving average
 (avg(`num_steps`) OVER (
         ORDER BY EventStart
         ROWS BETWEEN
-          60 PRECEDING AND
+          30 PRECEDING AND
           CURRENT ROW
       ))::float AS SmoothedNumSteps120SecondMA,--120 second moving average,
 -- Calories Burnt
@@ -81,16 +84,16 @@ calories_burnt AS SmoothedCaloriesBurnt30SecondMA, -- 30 second moving average
 (avg(`calories_burnt`) OVER (
         ORDER BY EventStart
         ROWS BETWEEN
-          60 PRECEDING AND
+          30 PRECEDING AND
           CURRENT ROW
       ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.silver_sensors_stateful ss
 WHERE
 --Use partition pruning to ignore data as it ages
 ss.Date = ((SELECT MAX(Date) FROM real_time_iot_dashboard.silver_sensors_stateful))
-AND ss.EventStart >= ((SELECT MAX(EventStart) FROM real_time_iot_dashboard.silver_sensors_stateful) - INTERVAL '1 HOUR')
-ORDER BY EventStart DESC
-LIMIT 1000
+AND ss.EventStart >= ((SELECT MAX(EventStart) FROM real_time_iot_dashboard.silver_sensors_stateful) - INTERVAL '15 MINUTES')
+ORDER BY timestamp DESC
+LIMIT 200
 
 -- COMMAND ----------
 
