@@ -59,7 +59,7 @@ SELECT timestamp,
       ))::float AS SmoothedCaloriesBurnt120SecondMA --120 second moving average
 FROM real_time_iot_dashboard.bronze_sensors
 -- Photon likes things this way for some reason
-WHERE timestamp::double >= ((SELECT MAX(timestamp)::double FROM real_time_iot_dashboard.bronze_sensors) - 3600)
+WHERE timestamp >= ((SELECT MAX(timestamp) FROM real_time_iot_dashboard.bronze_sensors) - INTERVAL '15 MINUTES')
 ORDER BY timestamp DESC
 
 -- COMMAND ----------
