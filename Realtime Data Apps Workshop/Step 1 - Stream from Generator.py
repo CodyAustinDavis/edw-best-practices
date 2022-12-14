@@ -76,8 +76,8 @@ spark.conf.set("spark.sql.shuffle.partitions", "32")
 # MAGIC 3. Schema Inference + Merge Schema: https://docs.databricks.com/ingestion/auto-loader/schema.html
 # MAGIC 4. File Notification Mode - For ultra high file volumes from S3/ADLS/GCS: https://docs.databricks.com/ingestion/auto-loader/file-detection-modes.html
 # MAGIC 5. Complex Sources -- advanced Glob Path Filters: <b> .option("pathGlobFilter", "[a-zA-Z].csv") </b> 
-# MAGIC 6. Rescue data - automatically insert "bad" data into a rescued data column so you never lose data <b> .option("cloudFiles.rescuedDataColumn", "_rescued_data")  </b>
-# MAGIC 7: Flexible Schema Hints: <b> .option("cloudFiles.schemaHints", "tags map<string,string>, version int") </b> 
+# MAGIC 6. Rescue data - automatically insert "bad" data into a rescued data column so you never lose data <b> .option("cloudFiles.rescuedDataColumn", "_rescued_data")</b>
+# MAGIC 7. Flexible Schema Hints: <b> .option("cloudFiles.schemaHints", "tags map<string,string>, version int") </b> 
 # MAGIC 
 # MAGIC Much more!
 # MAGIC 
@@ -164,7 +164,7 @@ df_raw = (spark
      .format("cloudFiles") ## csv, json, binary, text, parquet, avro
      .option("cloudFiles.format", "text")
      #.option("cloudFiles.useIncrementalListing", "true")
-     #.option("cloudFiles.useNotifications", "true")
+     #.option("cloudFiles.useNotifications", "true") !! IMPORTANT
      .option("cloudFiles.schemaLocation", autoloader_schema_location)
      #.option("schema", inputSchema)
      #.option("modifiedAfter", timestampString) ## option

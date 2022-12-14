@@ -171,15 +171,24 @@ TBLPROPERTIES("delta.targetFileSize"="128mb") -- if update heavy, file sizes are
 
 -- DBTITLE 1,Perform Upserts - Device Data
 MERGE INTO iot_dashboard.silver_sensors AS target
-USING (SELECT Id::integer,
+USING (
+WITH de_dup (
+SELECT Id::integer,
               device_id::integer,
               user_id::integer,
               calories_burnt::decimal,
               miles_walked::decimal,
               num_steps::decimal,
               timestamp::timestamp,
-              value::string
-              FROM iot_dashboard.bronze_sensors) AS source
+              value::string,
+              ROW_NUMBER() OVER(PARTITION BY device_id, user_id, timestamp ORDER BY timestamp DESC) AS DupRank
+              FROM iot_dashboard.bronze_sensors
+              )
+              
+SELECT Id, device_id, user_id, calories_burnt, miles_walked, num_steps, timestamp, value
+FROM de_dup
+WHERE DupRank = 1
+) AS source
 ON source.Id = target.Id
 AND source.user_id = target.user_id
 AND source.device_id = target.device_id
@@ -212,7 +221,7 @@ Order ZORDER cols in order of cardinality ascending
 
 */
 
-OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp, user_id, device_id);
+OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp);
 
 
 -- Truncate bronze batch once successfully loaded
