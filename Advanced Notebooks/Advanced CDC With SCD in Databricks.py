@@ -310,7 +310,7 @@ df_new_patient.write.format("delta").mode("append").saveAsTable("BronzePatientUp
 ## you can look for the Id of your job to get oldest version since was last run
 version_df_bronze = int(spark.sql("""DESCRIBE HISTORY BronzePatientUpdates""").alias("version")
                      .selectExpr("*", "notebook.notebookId AS notebookId")
-                     .filter((col("operation") == lit("WRITE")) &(col("notebookId") == "3530875234215136"))
+                     .filter((col("operation") == lit("WRITE")))
                      .agg(min("version").alias("startVersion"))
                      .collect()[0][0]
                     )
@@ -339,7 +339,7 @@ display(tbl_changes)
 bronze_df = (spark
              .readStream
              .format("delta")
-             #.option("readChangeFeed", "true")
+             .option("readChangeFeed", "true")
              #.option("startingVersion", 2) ## ! comment out to see the difference in data volumes the stream will merge (1 vs thousands)
              .table("BronzePatientUpdates")
             )

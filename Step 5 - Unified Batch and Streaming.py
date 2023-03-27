@@ -129,12 +129,10 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 
 # DBTITLE 1,Write Stream -- same as any other stream
 (df_raw
- .withColumn("date_month", date_trunc('month', col("value:time_stamp")))
 .writeStream
 .format("delta")
 .option("checkpointLocation", checkpoint_location)
 .trigger(availableNow=True) ## once=True, processingTime = '5 minutes', continuous ='1 minute'
-.partitionBy("date_month")
 .toTable("iot_dashboard_autoloader.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
 
@@ -257,7 +255,8 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
                 timestamp::timestamp,
                 value::string
          FROM (
-           SELECT *,ROW_NUMBER() OVER(PARTITION BY Id, user_id, device_id, timestamp ORDER BY timestamp DESC) AS DupRank
+           SELECT *,
+           ROW_NUMBER() OVER(PARTITION BY Id, user_id, device_id, timestamp ORDER BY timestamp DESC) AS DupRank
            FROM global_temp.updates_df
              )
          WHERE DupRank = 1
@@ -266,6 +265,7 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   ON source.Id = target.Id
   AND source.user_id = target.user_id
   AND source.device_id = target.device_id
+  AND source.timestamp > target.timestamp -- ensures any old data passed through because of ignore changes option is filtered out and does not update data needlessly
   WHEN MATCHED THEN UPDATE SET 
     target.calories_burnt = source.calories_burnt,
     target.miles_walked = source.miles_walked,
