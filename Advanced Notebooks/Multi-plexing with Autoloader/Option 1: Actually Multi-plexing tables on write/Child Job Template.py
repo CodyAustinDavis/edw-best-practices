@@ -45,7 +45,7 @@ checkpoint_path = f"dbfs:/checkpoints/cody.davis@databricks.com/{parent_job_name
 # COMMAND ----------
 
 # DBTITLE 1,Target Location Definitions
-spark.sql("""CREATE DATABASE IF NOT EXISTS main.iot_multiplexing_demo""")
+spark.sql("""CREATE DATABASE IF NOT EXISTS iot_multiplexing_demo""")
 
 # COMMAND ----------
 
@@ -87,8 +87,8 @@ transformed_df = (input_df
 # COMMAND ----------
 
 # DBTITLE 1,Truncate this child stream and reload from all data
-if start_over == "yes":
-  dbutils.fs.rm(checkpoint_path, recurse=True)
+
+dbutils.fs.rm(checkpoint_path, recurse=True)
 
 # COMMAND ----------
 

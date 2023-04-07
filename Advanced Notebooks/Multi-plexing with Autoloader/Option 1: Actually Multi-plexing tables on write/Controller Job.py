@@ -19,6 +19,7 @@ from pyspark.sql import Window, WindowSpec
 
 # DBTITLE 1,Logic to get event Name
 
+## This can be manual and loaded from a config, or parsed out from data/metadata
 @udf("string")
 def get_event_name(input_string):
   return re.sub("part-", "", input_string.split(".")[0])
@@ -27,7 +28,11 @@ def get_event_name(input_string):
 
 # DBTITLE 1,Define Load Balancing Parameters
 tasks_per_cluster = 2
-tasks_per_job = 10
+tasks_per_job = 5
+
+# COMMAND ----------
+
+spark.sql("""CREATE DATABASE IF NOT EXISTS iot_multiplexing_demo;""")
 
 # COMMAND ----------
 
@@ -55,16 +60,17 @@ parent_job_name = "parent_iot_stream"
 # DBTITLE 1,Create Job DAGs in parallel with a spark udf - load balance first
 events_balanced = (events_df
 .withColumn("ParentJobName", lit(parent_job_name))
-#.withColumn("NumJobs", row_number().over(Window().orderBy(lit("1"))))
-#.withColumn("JobGroup", col("NumJobs") % lit(tasks_per_job)) ## Grouping tasks into Job Groups
-.groupBy(col("ParentJobName"))
+.withColumn("NumJobs", row_number().over(Window().orderBy(lit("1"))))
+.withColumn("JobGroup", col("NumJobs") % lit(tasks_per_job)) ## Grouping tasks into Job Groups
+.withColumn("JobName", concat(col("ParentJobName"), col("JobGroup")))
+.groupBy(col("ParentJobName"), col("JobName"))
 .agg(collect_list(col("event_name")).alias("event_names"))
-.withColumn("JobName", col("ParentJobName"))
 .withColumn("InputRootPath", lit(input_root_path))
 )
 
 # COMMAND ----------
 
+# DBTITLE 1,Show Balanced Workload of Kobs
 display(events_balanced)
 
 # COMMAND ----------
@@ -77,14 +83,14 @@ import json
 @udf("string")
 def build_streaming_job(job_name, input_root_path, parent_job_name, event_names, tasks_per_cluster):
 
-  ## tasks_per_cluster not used in this example, but can be used to further refine shared cluster model
 
+  ## tasks_per_cluster not used in this example, but can be used to further refine shared cluster model
   full_job_name = parent_job_name + "_"+ job_name
   ## Optional, decide how many streams go onto each cluster or just group by job (in this example there will be 10 streams per job on 1 cluster)
   tasks = [{
             "task_key": f"event_{i}",
             "notebook_task": {
-                "notebook_path": "/Repos/cody.davis@databricks.com/edw-best-practices/Multi-plexing with Autoloader/Option 1: Actually Multi-plexing tables on write/Child Job Template",
+                "notebook_path": "/Repos/cody.davis@databricks.com/edw-best-practices/Advanced Notebooks/Multi-plexing with Autoloader/Option 1: Actually Multi-plexing tables on write/Child Job Template",
                 "base_parameters": {
                     "Input Root Path": "dbfs:/databricks-datasets/iot-stream/data-device/",
                     "Parent Job Name": parent_job_name,
@@ -148,7 +154,7 @@ def build_streaming_job(job_name, input_root_path, parent_job_name, event_names,
 
   endp_resp = requests.post(uri, data=job_json, headers=headers_auth).json()
         
-        
+  ## For demo purposes, this just creates a job, but in PROD, you will want to add code to update an existing job for the job group if it already exists   
   return endp_resp
 
 # COMMAND ----------
@@ -161,4 +167,10 @@ build_jobs_df = (events_balanced
 # COMMAND ----------
 
 # DBTITLE 1,Call action with collect or display or save
-display(build_jobs_df)
+build_jobs_df.write.format("delta").saveAsTable("iot_multiplexing_demo.job_orchestration_configs")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM iot_multiplexing_demo.job_orchestration_configs;
