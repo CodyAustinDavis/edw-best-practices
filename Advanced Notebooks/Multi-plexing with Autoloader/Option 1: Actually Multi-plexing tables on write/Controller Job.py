@@ -90,7 +90,7 @@ def build_streaming_job(job_name, input_root_path, parent_job_name, event_names,
   tasks = [{
             "task_key": f"event_{i}",
             "notebook_task": {
-                "notebook_path": "/Repos/cody.davis@databricks.com/edw-best-practices/Advanced Notebooks/Multi-plexing with Autoloader/Option 1: Actually Multi-plexing tables on write/Child Job Template",
+                "notebook_path": "/Repos/<your_user_here>/edw-best-practices/Advanced Notebooks/Multi-plexing with Autoloader/Option 1: Actually Multi-plexing tables on write/Child Job Template",
                 "base_parameters": {
                     "Input Root Path": "dbfs:/databricks-datasets/iot-stream/data-device/",
                     "Parent Job Name": parent_job_name,

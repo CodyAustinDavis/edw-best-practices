@@ -40,7 +40,7 @@ print(f"Event Task Name: {child_task_name}")
 # DBTITLE 1,Define Dynamic Checkpoint Path
 ## Eeach stream needs its own checkpoint, we can dynamically define that for each event/table we want to create / teast out
 
-checkpoint_path = f"dbfs:/checkpoints/cody.davis@databricks.com/{parent_job_name}/{child_task_name}/"
+checkpoint_path = f"dbfs:/checkpoints/<your_user_id_here>/{parent_job_name}/{child_task_name}/"
 
 # COMMAND ----------
 
@@ -80,7 +80,7 @@ transformed_df = (input_df
               "value:calories_burnt::decimal AS Calories",
               "value:timestamp::timestamp AS EventTimestamp",
               "current_timestamp() AS IngestionTimestamp",
-              "InputFileName")
+              "inputFileName")
 
 )
 
@@ -95,6 +95,7 @@ dbutils.fs.rm(checkpoint_path, recurse=True)
 # DBTITLE 1,Dynamic Write Stream
 (transformed_df
   .writeStream
+  .trigger(once=True)
   .option("checkpointLocation", checkpoint_path)
   .toTable(f"iot_multiplexing_demo.iot_stream_event_{child_task_name}")
 )
