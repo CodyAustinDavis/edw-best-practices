@@ -1,0 +1,6 @@
+{"http_path": "/sql/1.0/endpoints/<warehouse_id>",
+"host_name": "<host_name>",
+"token": "<dbx_token>",
+"catalog": "main",
+"database": "plotly_iot_dashboard"
+}

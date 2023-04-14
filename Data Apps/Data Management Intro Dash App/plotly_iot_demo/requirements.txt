@@ -1,0 +1,3 @@
+dash
+dash_bootstrap_components
+databricks-sql-connector ==2.4.1
