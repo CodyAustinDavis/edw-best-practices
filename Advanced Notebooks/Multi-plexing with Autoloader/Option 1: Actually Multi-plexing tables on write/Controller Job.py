@@ -14,6 +14,7 @@ root_file_source_location = "dbfs:/databricks-datasets/iot-stream/data-device/"
 import re
 from pyspark.sql.functions import *
 from pyspark.sql import Window, WindowSpec
+from math import ceil as round_up
 
 # COMMAND ----------
 
@@ -27,8 +28,8 @@ def get_event_name(input_string):
 # COMMAND ----------
 
 # DBTITLE 1,Define Load Balancing Parameters
-tasks_per_cluster = 2
-tasks_per_job = 5
+tasks_per_cluster = 5
+tasks_per_job = 10
 
 # COMMAND ----------
 
@@ -58,15 +59,15 @@ parent_job_name = "parent_iot_stream"
 # COMMAND ----------
 
 # DBTITLE 1,Create Job DAGs in parallel with a spark udf - load balance first
-events_balanced = (events_df
-.withColumn("ParentJobName", lit(parent_job_name))
-.withColumn("NumJobs", row_number().over(Window().orderBy(lit("1"))))
-.withColumn("JobGroup", col("NumJobs") % lit(tasks_per_job)) ## Grouping tasks into Job Groups
-.withColumn("JobName", concat(col("ParentJobName"), col("JobGroup")))
-.groupBy(col("ParentJobName"), col("JobName"))
-.agg(collect_list(col("event_name")).alias("event_names"))
-.withColumn("InputRootPath", lit(input_root_path))
-)
+    events_balanced = (events_df
+    .withColumn("ParentJobName", lit(parent_job_name))
+    .withColumn("NumJobs", row_number().over(Window().orderBy(lit("1"))))
+    .withColumn("JobGroup", ceil(col("NumJobs") / lit(tasks_per_job))) ## Grouping tasks into Job Groups
+    .withColumn("JobName", concat(col("ParentJobName"), col("JobGroup")))
+    .groupBy(col("ParentJobName"), col("JobName"))
+    .agg(collect_list(col("event_name")).alias("event_names"))
+    .withColumn("InputRootPath", lit(input_root_path))
+    )
 
 # COMMAND ----------
 
@@ -79,6 +80,8 @@ display(events_balanced)
 import re
 import requests
 import json
+from math import ceil as round_up
+
 
 @udf("string")
 def build_streaming_job(job_name, input_root_path, parent_job_name, event_names, tasks_per_cluster):
@@ -86,23 +89,30 @@ def build_streaming_job(job_name, input_root_path, parent_job_name, event_names,
 
   ## tasks_per_cluster not used in this example, but can be used to further refine shared cluster model
   full_job_name = parent_job_name + "_"+ job_name
+
+  ## First Create the clusters based on tasks_per_cluster
+  num_cluster_to_make = round_up(len(event_names)/tasks_per_cluster)
+  clusters_to_create = [f"Job_Cluster_{str(i + 1)}" for i in range(0,num_cluster_to_make)]
+
+
   ## Optional, decide how many streams go onto each cluster or just group by job (in this example there will be 10 streams per job on 1 cluster)
   tasks = [{
-            "task_key": f"event_{i}",
+            "task_key": f"event_{event}",
             "notebook_task": {
                 "notebook_path": "/Repos/<your_user_here>/edw-best-practices/Advanced Notebooks/Multi-plexing with Autoloader/Option 1: Actually Multi-plexing tables on write/Child Job Template",
                 "base_parameters": {
                     "Input Root Path": "dbfs:/databricks-datasets/iot-stream/data-device/",
                     "Parent Job Name": parent_job_name,
-                    "Child Task Name": f"event_{i}"
+                    "Child Task Name": f"event_{event}"
                 },
                 "source": "WORKSPACE"
             },
-            "job_cluster_key": "Job_cluster",
+            "job_cluster_key": str(clusters_to_create[round_up((i+1)/tasks_per_cluster) - 1]),
             "timeout_seconds": 0,
             "email_notifications": {}
-            } for i in event_names
+            } for i, event in enumerate(event_names)
           ]
+
 
   ## Use jobs API to create a job for each grouping
   job_req = {
@@ -121,7 +131,7 @@ def build_streaming_job(job_name, input_root_path, parent_job_name, event_names,
     "tasks": tasks,
     "job_clusters": [
         {
-            "job_cluster_key": "Job_cluster",
+            "job_cluster_key": cluster,
             "new_cluster": {
                 "cluster_name": "",
                 "spark_version": "12.2.x-scala2.12",
@@ -136,9 +146,9 @@ def build_streaming_job(job_name, input_root_path, parent_job_name, event_names,
                 "enable_elastic_disk": "false",
                 "data_security_mode": "SINGLE_USER",
                 "runtime_engine": "STANDARD",
-                "num_workers": 4
+                "num_workers": 2
             }
-        }
+        } for cluster in clusters_to_create
     ],
     "tags": {
       parent_job_name: ""
