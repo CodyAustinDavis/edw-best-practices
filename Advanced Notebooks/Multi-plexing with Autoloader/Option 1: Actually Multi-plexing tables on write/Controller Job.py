@@ -1,8 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Controller notebook
-# MAGIC 
+# MAGIC
 # MAGIC Identifies and Orcestrates the sub jobs
 
 # COMMAND ----------
@@ -51,6 +51,12 @@ JobCreationResult STRING
 
 # COMMAND ----------
 
+# DBTITLE 1,Get Most Recent Max Job Set Id to keep creating new jobs
+max_job_id = int(spark.sql("""SELECt MAX(JobCreationSetId) FROM iot_multiplexing_demo.job_orchestration_configs""").collect()[0][0])
+print(max_job_id)
+
+# COMMAND ----------
+
 # DBTITLE 1,Step 1: Logic to get unique list of events/sub directories that separate the different streams
 # Design considerations
 # Ideally the writer of the raw data will separate out event types by folder so you can use globPathFilters to create separate streams
@@ -87,11 +93,12 @@ parent_job_name = "parent_iot_stream"
     events_balanced = (events_df
     .withColumn("ParentJobName", lit(parent_job_name))
     .withColumn("NumJobs", row_number().over(Window().orderBy(lit("1"))))
-    .withColumn("JobGroup", ceil(col("NumJobs") / lit(tasks_per_job))) ## Grouping tasks into Job Groups
-    .withColumn("JobName", concat(col("ParentJobName"), col("JobGroup")))
-    .groupBy(col("ParentJobName"), col("JobName"))
+    .withColumn("JobGroup", ceil(col("NumJobs") / lit(tasks_per_job)) + lit(max_job_id)) ## Grouping tasks into Job Groups
+    .withColumn("JobName", concat(col("ParentJobName"), lit("_"), col("JobGroup")))
+    .groupBy(col("ParentJobName"), col("JobGroup"), col("JobName"))
     .agg(collect_list(col("event_name")).alias("event_names"))
     .withColumn("InputRootPath", lit(input_root_path))
+    .selectExpr("JobGroup::bigint AS JobCreationSetId", "ParentJobName", "JobName", "event_names", "InputRootPath")
     )
 
 # COMMAND ----------
@@ -209,5 +216,5 @@ build_jobs_df.write.format("delta").mode("append").saveAsTable("iot_multiplexing
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM iot_multiplexing_demo.job_orchestration_configs;
