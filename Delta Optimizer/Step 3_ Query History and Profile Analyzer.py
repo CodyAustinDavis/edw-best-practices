@@ -58,6 +58,20 @@ FROM {optimizer_location}.all_tables_table_stats
 
 df.display()
 
+
+# COMMAND ----------
+
+# DBTITLE 1,Get Cardinality Stats
+
+df = spark.sql(f"""
+
+SELECT * 
+FROM {optimizer_location}.all_tables_cardinality_stats
+WHERE IsUsedInReads = 1 OR IsUsedInWrites = 1
+""")
+
+df.display()
+
 # COMMAND ----------
 
 # DBTITLE Register Unique Queries
