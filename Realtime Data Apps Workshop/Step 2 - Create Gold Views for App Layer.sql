@@ -1,22 +1,26 @@
 -- Databricks notebook source
 -- MAGIC %md
--- MAGIC 
+-- MAGIC
 -- MAGIC ## Building Production Data Apps - Last Mile BI on Databricks and Dash
--- MAGIC 
+-- MAGIC
 -- MAGIC <b> Dash apps:  </b> https://dash.gallery/Portal/
+-- MAGIC
+-- MAGIC
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC 
+-- MAGIC
 -- MAGIC <img src="https://miro.medium.com/max/1400/1*N2hJnle6RJ6HRRF4ISFBjw.gif">
+-- MAGIC
+-- MAGIC
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC 
+-- MAGIC
 -- MAGIC ## Dashboard Recommendations
--- MAGIC 
+-- MAGIC
 -- MAGIC 1. Pushdown timestamp filters as much as possible (especially now that insert order is preserved)
 -- MAGIC 2. Bring back as little data as necessary
 -- MAGIC 3. Make the Lakehouse do all the work
@@ -98,7 +102,7 @@ LIMIT 200
 -- COMMAND ----------
 
 -- MAGIC %sql
--- MAGIC 
+-- MAGIC
 -- MAGIC SELECT * FROM real_time_iot_dashboard.gold_sensors_stateful
 
 -- COMMAND ----------

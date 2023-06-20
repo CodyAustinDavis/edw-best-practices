@@ -1,59 +1,61 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # Building Effective Streaming Pipelines -- Autoloader, Delta, Merge
-# MAGIC 
+# MAGIC
 # MAGIC ---
-# MAGIC 
+# MAGIC
 # MAGIC **Overview**: This notebook will provide a broad overview on some key practices for streaming data from files using autoloader, streaming to and from delta, and unifying batch and streaming MERGE workloads
-# MAGIC 
+# MAGIC
 # MAGIC ---
-# MAGIC 
+# MAGIC
 # MAGIC ## 3 Parts: 
-# MAGIC 
+# MAGIC
 # MAGIC <li> 1. Raw to Bronze Streaming with Autoloader
 # MAGIC   
 # MAGIC <li> 2. Bronze (or even raw) to Silver Streaming with Watermarking
 # MAGIC   
 # MAGIC <li> 3. Bronze to Silver Streaming with foreachBatch AND MERGE (for less real-time, more EDW like workloads)
 # MAGIC   
-# MAGIC 
+# MAGIC
 # MAGIC ---
 # MAGIC   
 # MAGIC ### This notebook creates 2 tables from the sample data set in the asssociated data generator: 
-# MAGIC 
+# MAGIC
 # MAGIC <b> Database: </b> real_time_iot_dashboard
-# MAGIC 
+# MAGIC
 # MAGIC <b> Tables: </b> bronze_sensors, silver_sensors, silver_sensors_stateful
-# MAGIC 
+# MAGIC
 # MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
+# MAGIC
 
 # COMMAND ----------
 
 # DBTITLE 1,Real-time Pipeline Architecture
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC <img src="https://miro.medium.com/max/1400/0*o7m8qLauQ003jUu7">
 
 # COMMAND ----------
 
 # DBTITLE 1,Plotly Dash App Output
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC <img src="https://miro.medium.com/max/1400/1*N2hJnle6RJ6HRRF4ISFBjw.gif">
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Part 1: Raw to Bronze with Autoloader
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Get Started With Best Practices: 
-# MAGIC 
+# MAGIC
 # MAGIC <li> 1. Real-time Stateful Streaming with Watermarking: https://www.databricks.com/blog/2022/08/22/feature-deep-dive-watermarking-apache-spark-structured-streaming.html
 # MAGIC   
 # MAGIC <li> 2. Streaming Best Practices: https://docs.databricks.com/structured-streaming/production.html
@@ -68,9 +70,9 @@ spark.conf.set("spark.sql.shuffle.partitions", "32")
 
 # DBTITLE 1,2 Streaming Options: Autoloader for files, Kafka/Kinesis/EventHubs for Streaming Message Queues
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Autoloader Benefits: 
-# MAGIC 
+# MAGIC
 # MAGIC 1. More Scalable Directory Listing (incremental + file notification)
 # MAGIC 2. Rocks DB State Store - Faster State management
 # MAGIC 3. Schema Inference + Merge Schema: https://docs.databricks.com/ingestion/auto-loader/schema.html
@@ -78,21 +80,21 @@ spark.conf.set("spark.sql.shuffle.partitions", "32")
 # MAGIC 5. Complex Sources -- advanced Glob Path Filters: <b> .option("pathGlobFilter", "[a-zA-Z].csv") </b> 
 # MAGIC 6. Rescue data - automatically insert "bad" data into a rescued data column so you never lose data <b> .option("cloudFiles.rescuedDataColumn", "_rescued_data")</b>
 # MAGIC 7. Flexible Schema Hints: <b> .option("cloudFiles.schemaHints", "tags map<string,string>, version int") </b> 
-# MAGIC 
+# MAGIC
 # MAGIC Much more!
-# MAGIC 
+# MAGIC
 # MAGIC ### Auto loader intro: 
 # MAGIC https://docs.databricks.com/ingestion/auto-loader/index.html
-# MAGIC 
+# MAGIC
 # MAGIC Rescue Data: https://docs.databricks.com/ingestion/auto-loader/schema.html#rescue
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC ### Auto Loader Full Options: 
-# MAGIC 
+# MAGIC
 # MAGIC https://docs.databricks.com/ingestion/auto-loader/options.html
 # MAGIC   
 # MAGIC ## Meta data options: 
-# MAGIC 
+# MAGIC
 # MAGIC Load the file metadata in auto loader for downstream continuity
 # MAGIC   https://docs.databricks.com/ingestion/file-metadata-column.html
 # MAGIC   
@@ -226,9 +228,9 @@ display(history_df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## LATENCY Can be affected by: 
-# MAGIC 
+# MAGIC
 # MAGIC <li> 1. How data comes in (kafka, files)
 # MAGIC <li> 2. File listing (optimize your source files with incremental/file notifications)
 # MAGIC <li> 3. Cluster Configs (node types)
@@ -239,20 +241,20 @@ display(history_df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Part 2: Streaming from Delta - with Stateful Aggregations
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC Streaming With Delta: https://docs.databricks.com/structured-streaming/delta-lake.html#language-python
 
 # COMMAND ----------
 
 # DBTITLE 1,Define Target Silver Table
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC CREATE OR REPLACE TABLE real_time_iot_dashboard.silver_sensors_stateful
 # MAGIC (EventStart timestamp,
 # MAGIC EventEnd timestamp,
@@ -324,26 +326,28 @@ if start_over == "Yes":
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC <b> Q: Do we need to optimize our table with OPTIMZE/ZORDER? 
 # MAGIC   
 # MAGIC <li> A: If under 1 min SLA, probably not a good idea. Just partition on a date range and delete older data to keep table small
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Part 3: Streaming + MERGE for EDW Analytical Pipelines
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %md 
-# MAGIC 
+# MAGIC
 # MAGIC ## Now we have data streaming into a bronze table at any clip/rate we want. 
 # MAGIC ## How can we stream into a silver table with merge?
-# MAGIC 
+# MAGIC
 # MAGIC <b> CAVEATS </b>
-# MAGIC 
+# MAGIC
 # MAGIC <li> 1. Only use merge when SLA is high enough
 # MAGIC <li> 2. Merge is the most expensive operation in a database, do not use if you dont need it.
 # MAGIC <li> 3. This design pattern is better suited for SLAs > 5s
@@ -351,10 +355,10 @@ if start_over == "Yes":
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC <b> Stream options from a delta table: </b> https://docs.databricks.com/delta/delta-streaming.html
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC <li> <b> 1. Limit throughput rate: </b>  https://docs.databricks.com/delta/delta-streaming.html#limit-input-rate
 # MAGIC <li> <b> 2. Specify starting version or timestamp: </b>  https://docs.databricks.com/delta/delta-streaming.html#specify-initial-position
 # MAGIC <li> <b> 3. Ignore updates/deletes: </b>  https://docs.databricks.com/delta/delta-streaming.html#ignore-updates-and-deletes
@@ -376,7 +380,7 @@ df_bronze_merge = (
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## If your data has updates and is not sub-second latency, you can use Structured Streaming to MERGE anything at any clip!
 
 # COMMAND ----------
@@ -388,7 +392,7 @@ AS SELECT * FROM {database_name}.bronze_sensors WHERE 1=2;""")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Use Structured Streaming for ANY EDW Workload with this design Pattern!
 
 # COMMAND ----------

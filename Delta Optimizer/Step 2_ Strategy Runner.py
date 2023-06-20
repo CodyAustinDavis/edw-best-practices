@@ -1,19 +1,19 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Run the output of recommended optimize statements as a single run or schedule as a periodic job
-# MAGIC 
+# MAGIC
 # MAGIC <h4> Run this after the delta optimizer is finished </h4>
-# MAGIC 
+# MAGIC
 # MAGIC #### 3 Modes:
-# MAGIC 
+# MAGIC
 # MAGIC <ul> 1. <b>include_all_tables</b>: this mode optimizes all tables in the databases that the delta optimizer was provided at the profiling stage
 # MAGIC   <ul> 2. <b> use_include_list</b> : this mode only optimizes tables that you explicitly WANT to INCLUDE that is a subset of the database monitored in the profiling stage. Must provide fully qualified tables names for now (i.e. hive_metastore.iot_dashboard.silver_sensors,etc.). 
 # MAGIC     <ul> 3. <b> use_exlude_list</b> : this mode optimizes all tables in the databases monitored EXCEPT the list provided. Must provide fully qualified table names for now. 
 # MAGIC       
 # MAGIC       
 # MAGIC #### Roadmap: 
-# MAGIC 
+# MAGIC
 # MAGIC 1. Be more selective about type of analyze statements depending on size of table and update frquency. (less frequently updated tables dont need it as much)
 # MAGIC 2. Use DLT metaprogramming framework to run in parallel (performance implications)
 # MAGIC 3. Use Jobs API to automatically set up a daily / hourly job for this. This is NOT always recommended by default. The optimize timing greatly depends on the ETL pipelines
@@ -22,13 +22,17 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ### Run Commands in Particular Order:
-# MAGIC 
+# MAGIC
 # MAGIC <li> 1. ALTER TABLE
 # MAGIC <li> 2. Column Reordering
 # MAGIC <li> 3. OPTIMIZE TABLE
 # MAGIC <li> 4. ANALYZE TABLE
+
+# COMMAND ----------
+
+# MAGIC %pip install deltaoptimizer-1.5.0-py3-none-any.whl
 
 # COMMAND ----------
 
@@ -91,10 +95,6 @@ for i in config_tbl_prop:
         
     except Exception as e:
         print(f"TABLE PROPERTIES failed with error: {str(e)}\n")
-
-# COMMAND ----------
-
-print(col_list)
 
 # COMMAND ----------
 
