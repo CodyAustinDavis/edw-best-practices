@@ -101,7 +101,6 @@ table_filter_list = [i.strip() for i in dbutils.widgets.get("Table Filter List (
 database_filter_list = [i.strip() for i in dbutils.widgets.get("Database Filter List (catalog.database) (Csv List)").split(",")]
 catalog_filter_list = [i.strip() for i in dbutils.widgets.get("Catalog Filter List (Csv List)").split(",")]
 database_output = dbutils.widgets.get("Optimizer Output Database:").strip()
-access_token = dbutils.widgets.get("Access Token:")
 
 
 # COMMAND ----------
