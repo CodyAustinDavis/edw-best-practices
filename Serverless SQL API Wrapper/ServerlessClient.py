@@ -6,9 +6,8 @@ from dbsqlclient import ServerlessClient
 # DBTITLE 1,Example Inputs For Client
 
 
-token = "dapi618e08ddb9373877bf1c266738cbed7b"
-#warehouse_id = "e607fe9231124635"
-warehouse_id = "48d3e77b9063d54e"
+token = "<token>"
+warehouse_id = "<warehouse_id>"
 
 ## Single Query Example
 sql_statement = "SELECT concat_ws('-', M.id, N.id, random()) as ID FROM range(1000) AS M, range(1000) AS N LIMIT 10000000"
