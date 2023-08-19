@@ -39,7 +39,7 @@ class QueryFailException(Exception):
 
 class ServerlessClient():
 
-  def __init__(self, warehouse_id: str, token: str, host_name: str = None, verbose : bool = False):
+  def __init__(self, warehouse_id: str, token: str, session_catalog: str = None, session_schema:str = None, host_name: str = None, verbose : bool = False):
 
     ## Assume running in a spark environment, use same session as caller
     ## Defaults to same workspace that the client is in, but can manually override by passing in host_name 
@@ -62,6 +62,8 @@ class ServerlessClient():
 
     self.warehouse_id = warehouse_id
     self.token = token
+    self.session_catalog = session_catalog
+    self.session_schema = session_schema
 
     self.uri = f"https://{self.host_name}/api/2.0/sql/statements"
 
@@ -401,6 +403,12 @@ class ServerlessClient():
     "format": result_format,
     "disposition": "EXTERNAL_LINKS"
     }
+    
+    ## Handle session defaults if provided
+    if self.session_catalog is not None:
+      request_string["catalog"] = self.session_catalog
+    if self.session_schema is not None:
+      request_string["schema"] = self.session_schema
 
     ## Convert dict to json
     request_payload = json.dumps(request_string)
@@ -459,6 +467,13 @@ class ServerlessClient():
     "format": "JSON_ARRAY",
     "disposition": "INLINE"
     }
+
+    ## Handle session defaults if provided
+    if self.session_catalog is not None:
+      request_string["catalog"] = self.session_catalog
+    if self.session_schema is not None:
+      request_string["schema"] = self.session_schema
+
 
     ## Convert dict to json
     request_payload = json.dumps(request_string)

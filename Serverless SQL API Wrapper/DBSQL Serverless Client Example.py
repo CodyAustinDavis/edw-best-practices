@@ -27,7 +27,7 @@ result_df = serverless_client.sql(sql_statement = sql_statement)
 # COMMAND ----------
 
 # DBTITLE 1,Multi Statement Command - No Results just Status - Recommended for production
-result = serverless_client.submit_multiple_sql_commands(sql_statements = multi_statement, full_results=False) #True full_results just returns the whole API response for each query
+result = serverless_client.submit_multiple_sql_commands(sql_statements = multi_statement, full_results=False) #session_catalog, session_schema are also optional parameters that will simulate a USE statement. True full_results just returns the whole API response for each query
 
 # COMMAND ----------
 
