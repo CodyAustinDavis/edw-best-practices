@@ -7,7 +7,7 @@ import json
 from pyspark.sql.types import *
 from pyspark.dbutils import DBUtils
 import IPython
-
+import time
 
 
       
@@ -24,7 +24,18 @@ import IPython
 ## WARNING: The results of the query are NOT distributed and are very similar to calling spark.sql().display(). The best design pattern here for large computations is to write INSERTS/MERGEs into Delta tables (either permanent or temporary) and then call the original spark.sql to read in the results in a distributed fashion. 
 
 
+## TO DO: 
+
+## Add TRANSACTION support -- identifying all tables affected inside the multi statement command, rollback any tables that were affected if ANY failures happen. This will be a wrapper on top of the multi statement SQL submissions
+
 """
+
+class QueryFailException(Exception):
+    def __init__(self, message, errors):            
+        super().__init__(message)
+            
+        self.errors = errors
+
 
 class ServerlessClient():
 
@@ -95,76 +106,139 @@ class ServerlessClient():
     return clean_struct
 
 
-  @staticmethod
-  def create_df_from_json_array(result_data, result_schema) -> DataFrame:
+  def clear_query_state(self):
+      
+    self.active_statement_id = None
+    self.active_sql_statement = None
+    self.statement_status = None
+    self.statement_return_payload = None
+    return
+
+  def create_df_from_json_array(self, result_data, result_schema) -> DataFrame:
     ## input, result data (JSONARRAY, raw result schema)
 
-    field_names = [i.get("name") for i in result_schema]
-    temp_df = self.spark.createDataFrame(result_data).toDF(*field_names)
+    ## Handle no result calculation
 
-    ## Cast the associated column types
-
-    cast_expr = []
-    ## Build SQL Expression
-    for i,j  in enumerate(temp_df.columns):
-      cast_d_type = result_schema[i].get("type_text")
-      #print(f"{j} --> {cast_d_type}")
-
-      ## TO DO:  Deal with STRUCT types
-
-      if cast_d_type.startswith("ARRAY"):
-
-        ep = f"from_json({j},  '{cast_d_type}') AS {j}"
-
-      else:
-        ep = f"CAST({j} AS {cast_d_type}) AS {j}"
-
-      cast_expr.append(ep)
-      
-
-    clean_df = temp_df.selectExpr(*cast_expr)
-
-    return clean_df
+    ## IF NOT RESULT, BUILD RETURN DF FROM STATUS MESSAGE
+    if (result_data is None or result_schema is None):
 
 
-  def prepare_final_df_from_json_array(self, endp_resp) -> DataFrame:
-    ## Parse results into data frame function
+        result_json_array = {"statement_id": self.active_statement_id,
+                                "statement_text": self.active_sql_statement,
+                                "status": self.statement_status,
+                                "result": self.statement_return_payload}
 
-    try: 
-      result_schema = endp_resp.get("manifest").get("schema").get("columns")
-      result_format = endp_resp.get("manifest").get("format")
-      result_chunk_count = endp_resp.get("manifest").get("total_chunk_count")
-      result_total_row_count = endp_resp.get("manifest").get("total_row_count")
-      result_is_partial = endp_resp.get("manifest").get("truncated")
-      result_chunk_array = endp_resp.get("manifest").get("chunks")
-
-      if result_format == "JSON_ARRAY":
-          
-        result_data = endp_resp.get("result").get("data_array")
-
-        ## Not used here
-        #result_clean_schema = self.convert_to_struct_from_api_resp(result_schema)
-
-        clean_df = self.create_df_from_json_array(result_data, result_schema)
+        field_names = list(result_json_array.keys())
+    
+        clean_df = self.spark.createDataFrame([result_json_array]).select("statement_id","status", "statement_text","result")
 
         return clean_df
-      
-      else: 
+
+    else:
+        field_names = [i.get("name") for i in result_schema]
+        temp_df = self.spark.createDataFrame(result_data).toDF(*field_names)
+
+        ## Cast the associated column types
+
+        cast_expr = []
+        ## Build SQL Expression
+        for i,j  in enumerate(temp_df.columns):
+
+            cast_d_type = result_schema[i].get("type_text")
+            #print(f"{j} --> {cast_d_type}")
+
+            ## TO DO:  Deal with STRUCT types
+
+            if cast_d_type.startswith("ARRAY"):
+
+                ep = f"from_json({j},  '{cast_d_type}') AS {j}"
+
+            else:
+                ep = f"CAST({j} AS {cast_d_type}) AS {j}"
+
+            cast_expr.append(ep)
+            
+
+        clean_df = temp_df.selectExpr(*cast_expr)
+
+        return clean_df
+
+
+  def prepare_final_df_from_json_array(self, response = None) -> DataFrame:
+    ## Parse results into data frame function
+
+    if response is None:
+        endp_resp = self.statement_return_payload
+    else:
+        endp_resp = response
+
+    if self.statement_status != "SUCCEEDED":
+        msg = f"Statement id {self.active_statement_id} FAILED with response: {self.statement_return_payload}"
+        errors = self.statement_return_payload
+
+        query_fail = QueryFailException(message=msg, errors=errors)
+
+        raise(query_fail)
+    
+
+    try: 
+        result_schema = endp_resp.get("manifest").get("schema").get("columns")
+        result_format = endp_resp.get("manifest").get("format")
+        result_chunk_count = endp_resp.get("manifest").get("total_chunk_count")
+        result_total_row_count = endp_resp.get("manifest").get("total_row_count")
+        result_is_partial = endp_resp.get("manifest").get("truncated")
+        result_chunk_array = endp_resp.get("manifest").get("chunks")
+
+        if result_format == "JSON_ARRAY":
+
+            result_data = endp_resp.get("result").get("data_array")
+            ## Not used here
+            #result_clean_schema = self.convert_to_struct_from_api_resp(result_schema)
+
+            clean_df = self.create_df_from_json_array(result_data, result_schema)
+
+            return clean_df
         
-        if self.verbose == True:
-          print(f"Response is not JSON_ARRAY... and is: {result_format} instead, use different result parsing function")
+        else: 
+        
+            if self.verbose == True:
+                print(f"Response is not JSON_ARRAY... and is: {result_format} instead, use different result parsing function")
 
-        return
       
+    ## If here, likely syntax error or some other error, build error message to show this
+    ## This is not a bug, we WANT syntax errors / FAILED statements to error, because spark.sql would also error
     except Exception as e:
-      if self.verbose == True:
-        print(f"Failed to build and return df.... here is the response: {endp_resp}")
+        
+        if self.statement_status == 'FAILED':
+            msg = f"Statement id {self.active_statement_id} FAILED with response: {self.statement_return_payload}"
+        
+        else:
+            msg = f"Statement id {self.active_statement_id} FAILED with response: {self.statement_return_payload}"
 
-      raise(e)
+        if self.verbose == True:
+            print(f"Failed to build and return df.... here is the response: {endp_resp}")
+
+        raise(msg)
 
 
 
-  def poll_for_statement_status(self, max_wait_time = 30):
+
+  def get_statement_status(self, response_type = 'status'):
+      ## types: status, response
+
+    ## Check current status first, if not pending, then just return this
+
+    check_status_resp = requests.get(self.uri + "/" + self.active_statement_id, headers=self.headers_auth).json()
+    statement_status = check_status_resp.get("status").get("state")
+
+    if response_type == "status":
+        return statement_status
+    else: 
+        return check_status_resp
+
+
+
+  def poll_for_statement_status(self, max_wait_time = 15):
 
     statement_status = self.statement_status
 
@@ -176,22 +250,27 @@ class ServerlessClient():
     ## Check current status first, if not pending, then just return this
     check_status_resp = requests.get(self.uri + "/" + self.active_statement_id, headers=self.headers_auth).json()
     statement_status = check_status_resp.get("status").get("state")
-        
+
+    ## Refresh with initial query
+    self.statement_return_payload = check_status_resp
+    self.statement_status = statement_status
+    
     while statement_status in ["RUNNING", "PENDING"]:
 
-      check_status_resp = requests.get(uri + "/" + self.active_statement_id, headers=self.headers_auth).json()
+      check_status_resp = requests.get(self.uri + "/" + self.active_statement_id, headers=self.headers_auth).json()
+
+      print(check_status_resp)
       statement_status = check_status_resp.get("status").get("state")
 
       ## update internal status of query
-
+      self.statement_return_payload = check_status_resp
       self.statement_status = statement_status
 
       if self.verbose == True:
-        print(statement_status)
+        print(self.statement_status)
 
-      if statement_status in ["SUCCEEDED", "FAILED", "CLOSED"]:
-          ## Gets status of the current statement id in queue
-        return check_status_resp  
+      if self.statement_status in ["SUCCEEDED", "FAILED", "CLOSED"]:
+        return self.statement_return_payload  
 
 
       num_retries += 1
@@ -205,7 +284,7 @@ class ServerlessClient():
 
       time.sleep(wait_time_in_seconds)
 
-
+    return self.statement_return_payload
 
 
 
@@ -228,13 +307,18 @@ class ServerlessClient():
 
 
   ## Process parallel chunks in parallel Needs to process the 0th chunk differently
-  def build_dataframe_from_chunks(self, response, return_type = "spark", limit=None):
+  def build_dataframe_from_chunks(self, response=None, return_type = "spark", limit=None):
 
+      if response is None:
+        endp_resp = self.statement_return_payload
+      else:
+        endp_resp = response
+        
       ## spark or pandas return type
       self.spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
 
-      processing_statement_id = response["statement_id"]
-      chunks = response["manifest"]["chunks"]
+      processing_statement_id = endp_resp["statement_id"]
+      chunks = endp_resp["manifest"]["chunks"]
       tables = []
 
       if self.verbose == True:
@@ -245,7 +329,7 @@ class ServerlessClient():
 
           if chunk_info["chunk_index"] == 0:
 
-            chunk_0_external_links = [i.get("external_link") for i in response['result']['external_links']][0]
+            chunk_0_external_links = [i.get("external_link") for i in endp_resp['result']['external_links']][0]
 
             # NOTE: do _NOT_ send the authorization header to external urls
             raw_response = requests.get(chunk_0_external_links, auth=None, headers=None)
@@ -331,28 +415,34 @@ class ServerlessClient():
 
 
     ## Check for status, poll until SUCCEEDED or FAILED or CLOSED
+    if self.statement_status in ['FAILED', 'CLOSED']:
 
-    if self.statement_status in ["SUCCEEDED", "CLOSED"]:
+        raise(QueryFailException(message=f"Query failed in line with message: \n {self.statement_return_payload}", errors=self.statement_return_payload))
+
+    elif self.statement_status in ["SUCCEEDED"]:
       final_response = self.statement_return_payload
 
-    else:
+    elif self.statement_status in ['RUNNING', 'PENDING']:
+
       final_response = self.poll_for_statement_status()
       self.statement_return_payload = final_response
       self.statement_status = final_response.get("status").get("state")
-    
-    self.statement_return_payload = final_response
 
-    if return_type == "message":
+    else:
+        raise(QueryFailException(message=f"Query failed in line with unkown state... with response: {endp_resp}", errors=self.statement_return_payload))
+
+    ## Parse response
+    if return_type == "dataframe":
+      final_df = self.build_dataframe_from_chunks()
+      return final_df
+    
+    elif return_type == "message":
       return self.statement_return_payload
     
-    elif return_type == "dataframe":
-      
-      results_df = self.build_dataframe_from_chunks(self.statement_return_payload)
-      return results_df
-
     elif return_type == "status":
       return self.statement_status
-  
+
+
 
 
   ## submit async query (the additional methods couple the ability to cancel and get the status of the async query)
@@ -384,17 +474,25 @@ class ServerlessClient():
 
     ## Check for status, poll until SUCCEEDED or FAILED or CLOSED
 
-    if self.statement_status in ["SUCCEEDED", "CLOSED"]:
+    if self.statement_status in ['FAILED', 'CLOSED']:
+
+        raise(QueryFailException(message=f"Query failed in line with message: \n {self.statement_return_payload}", errors=self.statement_return_payload))
+
+    elif self.statement_status in ["SUCCEEDED"]:
       final_response = self.statement_return_payload
 
-    else:
+    elif self.statement_status in ['RUNNING', 'PENDING']:
+
       final_response = self.poll_for_statement_status()
       self.statement_return_payload = final_response
       self.statement_status = final_response.get("status").get("state")
 
+    else:
+        raise(QueryFailException(message=f"Query failed in line with unkown state... with response: {endp_resp}", errors=self.statement_return_payload))
+
     ## Parse response
     if return_type == "dataframe":
-      final_df = self.prepare_final_df_from_json_array(endp_resp=final_response)
+      final_df = self.prepare_final_df_from_json_array()
       return final_df
     
     elif return_type == "message":
@@ -431,7 +529,7 @@ class ServerlessClient():
       except:
         if self.verbose == True:
           print("Result too large to inline... moving to external links...")
-
+        
         final_df = self.submit_sql_async_external_links(sql_statement, return_type = return_type)
         return final_df
       
@@ -458,11 +556,16 @@ class ServerlessClient():
   ## Submits chains of SQL commands with ; delimeter and tracks status of each command, results status of all commands
   def submit_multiple_sql_commands(self, sql_statements: str, process_mode = "default", return_type = "message", full_results=False): 
 
-    command_array = sql_statements.split(";")
+    self.clear_query_state()
+
+    ## Clean command array
+    command_array = [i.strip() for i in sql_statements.split(";") if len(i.strip()) > 0]
     failed_queries = 0
     command_chain_dict = {"ALL_SUCCESS": None, "STATEMENTS": []}
-
     self.multi_statement_result_state = command_chain_dict
+
+    ## Clear out single query state as well
+    
 
     for i, query in enumerate(command_array):
 
@@ -483,8 +586,12 @@ class ServerlessClient():
 
     self.multi_statement_result_state = command_chain_dict
 
-    return command_chain_dict
-  
+    print(f"Statment Status: {self.statement_status}")
+
+    ## They above process will just save the state on success or fail, now here we check if ALL succeeded = True, if not, raise an exception
+    if self.multi_statement_result_state["ALL_SUCCESS"] != True:
+        raise(QueryFailException(message=f"FAILED: One of the queries in the statements failed with error: \n {self.multi_statement_result_state}", errors=self.multi_statement_result_state))
+
 
   ## Submit SQL commands with NO results, just the API messages / success or failure
   def submit_multiple_sql_commands_last_results(self, sql_statements: str, process_mode = "default"): 
@@ -492,8 +599,10 @@ class ServerlessClient():
     ## This function could be better improved for further tracking of final results, this is really not a great design pattern in production 
     ## Because if a query fails somewhere in the chain and we still return the results of the last query, this currently doesnt track the failures and return them
     ## What we will do is if ANY queries fail, raise error
+    self.clear_query_state()
 
-    command_array = sql_statements.split(";")
+    ## Clean command array
+    command_array = [i.strip() for i in sql_statements.split(";") if len(i.strip()) > 0]
     failed_queries = 0
     command_chain_dict = {"ALL_SUCCESS": None, "STATEMENTS": []}
 
@@ -504,7 +613,10 @@ class ServerlessClient():
     for i, query in enumerate(command_array):
 
       try:
+        ## If last query in chain, process to return results of it
         if i == (len(command_array) - 1):
+
+
           return_df = self.sql(sql_statement = query, process_mode = process_mode, return_type = "dataframe")
 
           ## Get the last query state results as well
@@ -525,7 +637,14 @@ class ServerlessClient():
           ## When processing last query right before we return results, save status of full query DAG
           if failed_queries == 0:
             command_chain_dict["ALL_SUCCESS"] = True
-          return return_df
+
+            ## They above process will just save the state on success or fail, now here we check if ALL succeeded = True, if not, raise an exception
+          ## They above process will just save the state on success or fail, now here we check if ALL succeeded = True, if not, raise an exception
+          if self.multi_statement_result_state["ALL_SUCCESS"] != True:
+            raise(QueryFailException(message=f"FAILED: One of the queries in the statements failed with error: \n {self.multi_statement_result_state}", errors=self.multi_statement_result_state))
+
+          else:
+            return return_df
 
         else:
           return_msg = self.sql(sql_statement = query, process_mode = process_mode, return_type = "message")
