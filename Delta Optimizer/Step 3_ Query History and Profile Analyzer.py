@@ -1,11 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC
+# MAGIC 
 # MAGIC ## Select from Results table to Look at Profiles of Queries, Tables, and Recommendations
-
-# COMMAND ----------
-
-# MAGIC %pip install deltaoptimizer-1.5.0-py3-none-any.whl
 
 # COMMAND ----------
 
@@ -33,7 +29,7 @@ delta_optimizer = DeltaOptimizer(database_name=optimizer_location)
 # MAGIC table_mode = dbutils.widgets.get("table_mode")
 # MAGIC include_table_list = [i.strip() for i in dbutils.widgets.get("include_list(csv)").split(",")]
 # MAGIC exclude_table_list = [i.strip() for i in dbutils.widgets.get("exclude_list(csv)").split(",")]
-# MAGIC
+# MAGIC 
 # MAGIC if table_mode == "include_all_tables":
 # MAGIC   df_results = (delta_optimizer.get_results()
 # MAGIC                )
@@ -107,7 +103,7 @@ raw_queries_df.display()
 
 # DBTITLE 1,Most Expensive Queries in a all run history (user can add timestamp filter in a WHERE clause)
 # MAGIC %sql
-# MAGIC
+# MAGIC 
 # MAGIC SELECT 
 # MAGIC r.query_hash,
 # MAGIC r.query_text,
@@ -125,7 +121,7 @@ raw_queries_df.display()
 
 # DBTITLE 1,Query Runs Over Time - General
 # MAGIC %sql
-# MAGIC
+# MAGIC 
 # MAGIC SELECT 
 # MAGIC date_trunc('hour', QueryStartTime) AS Date,
 # MAGIC COUNT(query_id) AS TotalQueryRuns,
@@ -138,7 +134,7 @@ raw_queries_df.display()
 
 # DBTITLE 1,Top 10 Queries with Most Total Runtime Per Day (Duration * # times run)
 # MAGIC %sql
-# MAGIC
+# MAGIC 
 # MAGIC WITH r AS (
 # MAGIC   SELECT 
 # MAGIC   date_trunc('day', r.QueryStartTime) AS Date,
@@ -166,7 +162,7 @@ raw_queries_df.display()
 
 # DBTITLE 1,Top 10 Longest Running Queries By Day
 # MAGIC %sql
-# MAGIC
+# MAGIC 
 # MAGIC WITH r AS (
 # MAGIC   SELECT 
 # MAGIC   date_trunc('day', r.QueryStartTime) AS Date,
@@ -194,7 +190,7 @@ raw_queries_df.display()
 
 # DBTITLE 1,Top 10 Most OFTEN ran queries by Day
 # MAGIC %sql
-# MAGIC
+# MAGIC 
 # MAGIC WITH r AS (
 # MAGIC   SELECT 
 # MAGIC   date_trunc('day', r.QueryStartTime) AS Date,
