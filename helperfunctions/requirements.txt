@@ -1,2 +1,3 @@
 sqlparse
 sql_metadata
+sqlglot

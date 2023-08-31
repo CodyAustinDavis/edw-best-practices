@@ -28,7 +28,12 @@ import time
 
 ## Add TRANSACTION support -- identifying all tables affected inside the multi statement command, rollback any tables that were affected if ANY failures happen. This will be a wrapper on top of the multi statement SQL submissions
 
+## Issues / Limitations
+
+1. Returning dataframe with complex types (MAP/Struct/ARRAY) does not work with the REST API
+
 """
+
 
 class QueryFailException(Exception):
     def __init__(self, message, errors):            
@@ -660,6 +665,7 @@ class ServerlessClient():
 
           else:
             return return_df
+
 
         else:
           return_msg = self.sql(sql_statement = query, process_mode = process_mode, return_type = "message")
