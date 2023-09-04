@@ -131,6 +131,7 @@ class SchemaHelpers():
  
  ### Class to help easily manage multi statement transactions in Delta. 
  ### ONLY SUPPORTS ONE CONCURRENT WRITING PIPELINE, THIS CAN INVALIDATE OTHER WRITERS DURING A TRANSACTION
+ #### OLD: UPDATE: 9/1/2023: This is the very simple version, the other version is now in its own file with more functionality 
 class Transaction():
   
   def __init__(self):

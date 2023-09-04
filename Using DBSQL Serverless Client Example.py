@@ -1,4 +1,8 @@
 # Databricks notebook source
+# MAGIC %pip install -r helperfunctions/requirements.txt
+
+# COMMAND ----------
+
 from helperfunctions.dbsqlclient import ServerlessClient
 
 # COMMAND ----------
@@ -6,7 +10,8 @@ from helperfunctions.dbsqlclient import ServerlessClient
 # DBTITLE 1,Example Inputs For Client
 
 
-token = None
+token = None ## optional
+host_name = None ## optional
 warehouse_id = "475b94ddc7cd5211"
 
 ## Single Query Example
@@ -17,11 +22,7 @@ multi_statement = "SELECT 1; SELECT 2; SELECT concat_ws('-', M.id, N.id, random(
 
 # COMMAND ----------
 
-serverless_client = ServerlessClient(warehouse_id = warehouse_id) ## token=<optional>, host_name=<optional>verbose=True for print statements and other debugging messages
-
-# COMMAND ----------
-
-print(dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None).replace("https://", ""))
+serverless_client = ServerlessClient(warehouse_id = warehouse_id, token=token, host_name=host_name) ## token=<optional>, host_name=<optional>verbose=True for print statements and other debugging messages
 
 # COMMAND ----------
 

@@ -1,8 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Delta Merge Helpers:
-# MAGIC 
+# MAGIC
 # MAGIC <p4> This is class with a set of static methods that help the user easily perform retry statements on operataions that may be cause a lot of conflicting transactions (usually in MERGE / UPDATE statements). 
 # MAGIC   
 # MAGIC <li> <b> 1 Method: retrySqlStatement(spark: SparkSession, operation_name: String, sqlStatement: String) </b> - the spark param is your existing Spark session, the operation name is simply an operation to identify your transaction, the sqlStatement parameter is the SQL statement you want to retry. 
