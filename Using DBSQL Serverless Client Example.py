@@ -1,13 +1,13 @@
 # Databricks notebook source
-from dbsqlclient import ServerlessClient
+from helperfunctions.dbsqlclient import ServerlessClient
 
 # COMMAND ----------
 
 # DBTITLE 1,Example Inputs For Client
 
 
-token = "<token>"
-warehouse_id = "<warehouse_id>"
+token = None
+warehouse_id = "475b94ddc7cd5211"
 
 ## Single Query Example
 sql_statement = "SELECT concat_ws('-', M.id, N.id, random()) as ID FROM range(1000) AS M, range(1000) AS N LIMIT 10000000"
@@ -17,7 +17,11 @@ multi_statement = "SELECT 1; SELECT 2; SELECT concat_ws('-', M.id, N.id, random(
 
 # COMMAND ----------
 
-serverless_client = ServerlessClient(warehouse_id = warehouse_id, token = token) ## verbose=True for print statements and other debugging messages
+serverless_client = ServerlessClient(warehouse_id = warehouse_id) ## token=<optional>, host_name=<optional>verbose=True for print statements and other debugging messages
+
+# COMMAND ----------
+
+print(dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None).replace("https://", ""))
 
 # COMMAND ----------
 

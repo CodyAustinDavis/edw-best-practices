@@ -8,8 +8,7 @@ from pyspark.sql.types import *
 from pyspark.dbutils import DBUtils
 import IPython
 import time
-
-
+from pyspark.dbutils import DBUtils
       
 
 """
@@ -44,8 +43,8 @@ class QueryFailException(Exception):
 
 class ServerlessClient():
 
-  def __init__(self, warehouse_id: str, token: str, session_catalog: str = None, session_schema:str = None, host_name: str = None, verbose : bool = False):
-
+  def __init__(self, warehouse_id: str, token: str = None, session_catalog: str = None, session_schema:str = None, host_name: str = None, verbose : bool = False):
+    from pyspark.dbutils import DBUtils
     ## Assume running in a spark environment, use same session as caller
     ## Defaults to same workspace that the client is in, but can manually override by passing in host_name 
 
@@ -54,19 +53,28 @@ class ServerlessClient():
     self.verbose = verbose
 
     self.dbutils = None
+
+    ## Initialize DBUtils
     if self.spark.conf.get("spark.databricks.service.client.enabled") == "true":
       self.dbutils = DBUtils(self.spark)
+
     else:
       self.dbutils = IPython.get_ipython().user_ns["dbutils"]
 
-    
+    ## Infer hostname from same workspace
     if host_name is not None:
       self.host_name = host_name
     else:
-      self.host_name = json.loads(self.dbutils.entry_point.getDbutils().notebook().getContext().toJson()).get("tags").get("browserHostName")
+      #self.host_name = json.loads(self.dbutils.entry_point.getDbutils().notebook().getContext().toJson()).get("tags").get("browserHostName")
+      self.host_name = self.dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None).replace("https://", "")
+
+    ## Automatically get user token if none provided
+    if token is not None:
+      self.token = token
+    else: 
+      self.token = self.dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
 
     self.warehouse_id = warehouse_id
-    self.token = token
     self.session_catalog = session_catalog
     self.session_schema = session_schema
 

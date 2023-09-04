@@ -1,16 +1,29 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC
-# MAGIC ## TO DO: 
-# MAGIC
-# MAGIC 1. Add ALL table rule
-# MAGIC 2. Add Manual Table Rule
-# MAGIC 3. Continue to add edge cases on affected tables: RESTORE TABLE, OPTIMIZE
 
-# COMMAND ----------
+ ### Class to help easily manage multi statement transactions in Delta.
+"""
+Author: Cody Austin Davis
+Date: 8/30/2023
+
+Description
+
+Transaction Manager to help run multi-lined SQL statements that depends on previous success/failures as is common in EDWs. 
+It will snapshot Delta tables on the start of a SQL transaction or by calling begin_transaction(tables_to_snapshot=[...]). 
+If a SQL transaction fails, it will automatically rollback. To rollback manually outside of a SQL only transaction, call .rollback_transaction()
+
+There are 3 modes to run this in: 
+
+1. SQL - selected_tables: Manually tell the manager which tables to snapshot and rollback. This is safest for production workflows. 
+2. SQL - inferred_altered_tables: Uses SQLGlot to find tables in a SQL statement that will be altered as a result of the SQL code, and snapshots those. Can use in production, but it is highly recommended to test first. 
+3. Python - do any code or logic and programmaically define when to begin/rollback a transaction by simply calling begin_transaction(tables_to_snapshot=[...]) and rollback_transaction()
+
+"""
+
+ ### ONLY SUPPORTS ONE CONCURRENT WRITING PIPELINE, THIS CAN INVALIDATE OTHER WRITERS DURING A TRANSACTION
+
 
 import json
 import requests
+import warnings
 import re
 import os
 from datetime import datetime, timedelta
@@ -18,19 +31,7 @@ import uuid
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count, lit, max
 from pyspark.sql.types import *
-from sqlglot import parse_one, exp, parse
-
-
-# COMMAND ----------
-
-# MAGIC %pip install -r helperfunctions/requirements.txt
-
-# COMMAND ----------
-
-
- ### Class to help easily manage multi statement transactions in Delta. 
- ### ONLY SUPPORTS ONE CONCURRENT WRITING PIPELINE, THIS CAN INVALIDATE OTHER WRITERS DURING A TRANSACTION
-import warnings
+from sqlglot import *
 
 
 
@@ -63,7 +64,6 @@ class AlteredTableParser():
       self.default_catalog = "hive_metastore"
 
     self.default_db = "default"
-
     self.use_sessions = []
     self.clean_tables_to_track = []
 
@@ -122,23 +122,27 @@ class AlteredTableParser():
 
     r = []
 
-    merge_tables = AlteredTableParser.find_affected_tables_in_operation_type(sql_statement, exp.Merge)
+    create_tables = AlteredTableParser().find_affected_tables_in_operation_type(sql_statement, exp.Create)
+    if len(create_tables) > 0:
+      r.append(create_tables)
+
+    merge_tables = AlteredTableParser().find_affected_tables_in_operation_type(sql_statement, exp.Merge)
     if len(merge_tables) > 0:
       r.append(merge_tables)
 
-    insert_tables = AlteredTableParser.find_affected_tables_in_operation_type(sql_statement, exp.Insert)
+    insert_tables = AlteredTableParser().find_affected_tables_in_operation_type(sql_statement, exp.Insert)
     if len(insert_tables) > 0:
       r.append(insert_tables)
 
-    delete_tables = AlteredTableParser.find_affected_tables_in_operation_type(sql_statement, exp.Delete)
+    delete_tables = AlteredTableParser().find_affected_tables_in_operation_type(sql_statement, exp.Delete)
     if len(delete_tables) > 0:
       r.append(delete_tables)
 
-    drop_tables = AlteredTableParser.find_affected_tables_in_operation_type(sql_statement, exp.Drop)
+    drop_tables = AlteredTableParser().find_affected_tables_in_operation_type(sql_statement, exp.Drop)
     if len(drop_tables) > 0:
       r.append(drop_tables)
 
-    update_tables = AlteredTableParser.find_affected_tables_in_operation_type(sql_statement, exp.Update)
+    update_tables = AlteredTableParser().find_affected_tables_in_operation_type(sql_statement, exp.Update)
     if len(update_tables) > 0:
       r.append(update_tables)
     ## TO DO: Add more compelte altering table expressions 
@@ -150,13 +154,20 @@ class AlteredTableParser():
   @staticmethod
   def scrub_for_custom_sql(start_str):
 
+    # IMPORTANT: this doesnt actually change the statement, just which tables it finds from sql-glot
     custom_statement_scrubbing_rules = {}
     custom_statement_scrubbing_rules["COPY"] = {"input": "copy\s", "output": "insert "}
+    custom_statement_scrubbing_rules["CREATE_SCHEMA"] = {"input": "create schema\s", "output": "USE "}
+    custom_statement_scrubbing_rules["CREATE_SCHEMA_EXISTS"] = {"input": "create schema if not exists\s", "output": "USE "}
+    custom_statement_scrubbing_rules["CREATE_DATABASE"] = {"input": "create database\s", "output": "USE "}
+    custom_statement_scrubbing_rules["CREATE_DATABASE_EXISTS"] = {"input": "create database if not exists\s", "output": "USE "}
     custom_statement_scrubbing_rules["TRUNCATE"] = {"input": "truncate\s", "output": "drop "}
-    custom_statement_scrubbing_rules["OPTIMIZE"] = {"input": "optimize\s", "output": "drop table "} # this doesnt actually change the statement, just which tables it finds
+    custom_statement_scrubbing_rules["OPTIMIZE"] = {"input": "optimize\s", "output": "drop table "}
     custom_statement_scrubbing_rules["FILEFORMAT"] = {"input": '\s*fileformat\s*=\s*[a-z]+\s', "output": ""}
     custom_statement_scrubbing_rules["COPY_OPTIONS"] = {"input": "copy_options\((?<=\()(.*?)(?=\))\)", "output": ""}
     ## add more custom rules here as needed
+    ## ANALYZE TABLE
+    ## RESTORE TABLE VERISON AS OF
 
 
     end_str = None
@@ -219,6 +230,7 @@ class AlteredTableParser():
           running_db = running_db_schema
         
       elif is_use is not None:
+
         cc = [i for i in re.split('use\s', j.lower()) if len(i)> 0][0].split(".")
         if len(cc) > 1:
           running_catalog = cc[0]
@@ -286,10 +298,11 @@ class TransactionException(Exception):
 
 
 
-class Transaction():
+class Transaction(AlteredTableParser, TransactionException):
   
   def __init__(self, mode="selected_tables", uc_default=False):
     
+
     self.available_transaction_modes = ["selected_tables", "inferred_altered_tables", "inferred_all_tables"]
 
     if mode not in self.available_transaction_modes:
@@ -302,6 +315,8 @@ class Transaction():
     self.tables_to_snapshot = []
     self.transaction_snapshot = {str(self.transaction_id):{}}
     self.spark = SparkSession.getActiveSession()
+    self.raw_sql_statement = None
+    self.sql_statement_list = []
 
   
   ### private function to get snapshot of delta tables for requested tables
@@ -324,10 +339,17 @@ class Transaction():
 
     starting_versions = {}
 
+    ## If table does not yet exists (i.e. the table will be created in the transaction, save a table record but make -1 version)
     for i in cleaned_tables_in_transaction:
 
       ## During the transaction -- other versions can be added, so you want most recent version IF fails before this specific write attempt of this job
-      latest_version = self.spark.sql(f"""DESCRIBE HISTORY {i}""").agg(max(col("version"))).collect()[0][0]
+      try:
+        latest_version = self.spark.sql(f"""DESCRIBE HISTORY {i}""").agg(max(col("version"))).collect()[0][0]
+      
+      ## If we cant describe history on a table, then it doesnt exists, snapshot at -1
+      except:
+        latest_version = -1
+
 
       starting_versions[i] = {"starting_version":latest_version}
       print(f"Starting Version: {i} at version {latest_version}")
@@ -400,7 +422,13 @@ class Transaction():
       for i in current_snapshot.keys():
         
         version = current_snapshot.get(i).get('starting_version')
-        sql_str = f"""RESTORE TABLE {i} VERSION AS OF {version}"""
+
+        ## If table didnt exist at start of transaction and then was created, drop it on rollback
+        ## When the transaction tries to snapshot again, it will get the proper new version and re-create
+        if version == -1:
+          sql_str = f"""DROP TABLE IF EXISTS {i};"""
+        else:
+          sql_str = f"""RESTORE TABLE {i} VERSION AS OF {version}"""
         self.spark.sql(sql_str)
         print(f"Restored table {i} to version {version}!")
       
@@ -411,13 +439,12 @@ class Transaction():
         
       else:
         raise(e)
-       
 
-  ### Execute multi statment SQL
-  def execute_sql_transaction(self, sql_string, tables_to_manage=[]):
-    ## You do not NEED to run SQL this way to rollback a transaction,
-    ## but it automatically breaks up multiple statements in one SQL file into a series of spark.sql() commands
-    stmts = sql_string.split(";")
+  ## Make this dynamic depending on tables inference mode
+  def begin_dynamic_transaction(self, tables_to_manage=[]):
+
+    ## Get from class state
+    sql_string = self.raw_sql_statement
 
     ## Get state of desired tables
     if self.mode == "selected_tables":
@@ -429,154 +456,79 @@ class Transaction():
     elif self.mode == "inferred_altered_tables":
 
       ## Do sql glot stuff
+      ## Initialize altered table parser
+      parser = AlteredTableParser(uc_default=self.uc_default)
 
-      table_altered_parser = AlteredTableParser(uc_default=self.uc_default)
-      inferred_tables_to_manage = table_altered_parser.parse_sql_chain_for_altered_tables(sql_string)
+      inferred_tables_to_manage = parser.parse_sql_chain_for_altered_tables(sql_string)
+      print(f"ALTERED TABLES: {inferred_tables_to_manage}")
+
 
       if len(inferred_tables_to_manage) == 0:
-        warnings.warn(str(TransactionException(message="Mode is 'inferred_alterd_tables', but couldnt find tables...", errors="Mode is 'inferred_alterd_tables', but couldnt find tables...")))
+        raise(TransactionException(message="Mode is 'inferred_alterd_tables', but couldnt find tables...", errors="Mode is 'inferred_alterd_tables', but couldnt find tables..."))
       else:
+
         self.begin_transaction(tables_to_snapshot = inferred_tables_to_manage)
 
     elif self.mode == "inferred_all_tables":
       ## do sql glot stuff
-      warnings.warn("Inferred_all_tables mode is not yet supported... this is risky and needs more tests, and might be a bad idea in general. Pick another mode")
+      raise(TransactionException(message="Inferred_all_tables mode is not yet supported... this is risky and needs more tests, and might be a bad idea in general. Pick another mode", errors= "Inferred_all_tables mode is not yet supported... this is risky and needs more tests, and might be a bad idea in general. Pick another mode"))
       self.begin_transaction(tables_to_snapshot = [])
 
+    return
 
+
+  ### Execute multi statment SQL, now we can implement this easier for Serverless or not Serverless
+  def execute_sql_transaction(self, sql_string, tables_to_manage=[], force=False):
+
+    ## If force= True, then if transaction manager fails to find tables, then it runs the SQL anyways
+    ## You do not NEED to run SQL this way to rollback a transaction,
+    ## but it automatically breaks up multiple statements in one SQL file into a series of spark.sql() commands
     
-    ## Run the Transaction Logic
+    stmts = sql_string.split(";")
+
+    ## Save to class state
+    self.raw_sql_statement = sql_string
+    self.sql_statement_list = stmts
+
+    success_tables = False
+
     try:
-      
-      print(f"Running multi statement SQL transaction now...")
-      for i, s in enumerate(stmts):
-        if len(s.strip()) == 0 or s is None:
-          pass
-        
-        else: 
-          print(f"Running statement {i+1} \n {s}")
-          self.spark.sql(s)
-          
-      print(f"Multi Statement SQL Transaction Successfull! Updating Snapshot")
-      self.commit_transaction()
-        
+      self.begin_dynamic_transaction(tables_to_manage=tables_to_manage)
+
+      success_tables = True
+
     except Exception as e:
-      print(f"Failed to run all statements... rolling back...")
-      self.rollback_transaction()
-      print(f"Rollback successful!")
+      print(f"FAILED: failed to acquire tables with errors: {str(e)}")
+    
+    ## If succeeded or force = True, then run the SQL
+    if success_tables or force:
+      if success_tables == False and force == True:
+        warnings.warn("WARNING: Failed to acquire tables but force flag = True, so SQL statement will run anyways")
+
+      ## Run the Transaction Logic
+      try:
+        
+        print(f"TRANSACTION IN PROGRESS ...Running multi statement SQL transaction now\n")
+        for i, s in enumerate(stmts):
+          if len(s.strip()) == 0 or s is None:
+            pass
+          
+          else: 
+            print(f"Running statement {i+1} \n {s}")
+            self.spark.sql(s)
+            
+        print(f"\n TRANSACTION SUCCEEDED: Multi Statement SQL Transaction Successfull! Updating Snapshot\n ")
+        self.commit_transaction()
+          
+      except Exception as e:
+        print(f"\n TRANSACTION FAILED to run all statements... ROLLING BACK \n")
+        self.rollback_transaction()
+        print(f"Rollback successful!")
+        
+        raise(e)
+
+    else:
+
+      raise(TransactionException(message="Failed to acquire tables and force=False, not running process.", errors="Failed to acquire tables and force=False, not running process."))
       
-      raise(e)
       
-      
-
-# COMMAND ----------
-
-y = Transaction(mode="inferred_altered_tables", uc_default=False)
-
-# COMMAND ----------
-
-sqlString = """
-USE CATALOG hive_metastore;
-
-CREATE SCHEMA IF NOT EXISTS iot_dashboard;
-
-USE SCHEMA iot_dashboard;
-
--- Statement 1 -- the load
-COPY INTO iot_dashboard.bronze_sensors
-FROM (SELECT 
-      id::bigint AS Id,
-      device_id::integer AS device_id,
-      user_id::integer AS user_id,
-      calories_burnt::decimal(10,2) AS calories_burnt, 
-      miles_walked::decimal(10,2) AS miles_walked, 
-      num_steps::decimal(10,2) AS num_steps, 
-      timestamp::timestamp AS timestamp,
-      value AS value -- This is a JSON object
-FROM "/databricks-datasets/iot-stream/data-device/")
-FILEFORMAT = json
-COPY_OPTIONS('force'='true') -- 'false' -- process incrementally
---option to be incremental or always load all files
-; 
-
--- Statement 2
-MERGE INTO iot_dashboard.silver_sensors AS target
-USING (SELECT Id::integer,
-              device_id::integer,
-              user_id::integer,
-              calories_burnt::decimal,
-              miles_walked::decimal,
-              num_steps::decimal,
-              timestamp::timestamp,
-              value::string
-              FROM iot_dashboard.bronze_sensors) AS source
-ON source.Id = target.Id
-AND source.user_id = target.user_id
-AND source.device_id = target.device_id
-WHEN MATCHED THEN UPDATE SET 
-  target.calories_burnt = source.calories_burnt,
-  target.miles_walked = source.miles_walked,
-  target.num_steps = source.num_steps,
-  target.timestamp = source.timestamp
-WHEN NOT MATCHED THEN INSERT *;
-
-USE iot_dashboard;
-
--- This calculate table stats for all columns to ensure the optimizer can build the best plan
--- Statement 3
-
-ANALYZE TABLE iot_dashboard.silver_sensors COMPUTE STATISTICS FOR ALL COLUMNS;
-
--- Statement 4
--- Truncate bronze batch once successfully loaded
-TRUNCATE TABLE iot_dashboard.bronze_sensors;
-"""
-
-# COMMAND ----------
-
-s = """
-MERGE INTO iot_dashboard.silver_sensors AS target
-USING (SELECT Id::integer,
-              device_id::integer,
-              user_id::integer,
-              calories_burnt::decimal,
-              miles_walked::decimal,
-              num_steps::decimal,
-              timestamp::timestamp,
-              value::string
-              FROM iot_dashboard.bronze_sensors) AS source
-ON source.Id = target.Id
-AND source.user_id = target.user_id
-AND source.device_id = target.device_id
-WHEN MATCHED THEN UPDATE SET 
-  target.calories_burnt = source.calories_burnt,
-  target.miles_walked = source.miles_walked,
-  target.num_steps = source.num_steps,
-  target.timestamp = source.timestamp
-WHEN NOT MATCHED THEN INSERT *;
-
-OPTIMIZE iot_dashboard.gold ZORDER BY (id);
-
-"""
-
-# COMMAND ----------
-
-# DBTITLE 1,Initialize Transaction Class
-x = Transaction(mode="inferred_altered_tables", uc_default=False)
-
-# COMMAND ----------
-
-# DBTITLE 1,Execute a multi statement SQL transaction from a SQL string
-## This method is great because to do not need to rollback manually, it is handled for you
-## This statement auto-commmits on success. If you do not want that, you can write pyspark or regular SQL outside of this method and then manually rollback
-x.execute_sql_transaction(sqlString)
-
-# COMMAND ----------
-
-x.get_transaction_snapshot()
-
-# COMMAND ----------
-
-# DBTITLE 1,Manually rollback a transaction from most recent explicit snapshot for tables
-### If you use the SQL execute method, it auto commits!! So you cannot roll back once it succeed. It will do it automatically. You can still use all the manual methods if you want to opt out of auto handling the rollback/committ process
-x.rollback_transaction()
