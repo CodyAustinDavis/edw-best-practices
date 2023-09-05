@@ -191,6 +191,9 @@ class AlteredTableParser():
 
   ##########
 
+  def get_use_session_tree(self):
+    return self.use_sessions
+  
 
   def parse_sql_chain_for_altered_tables(self, statement_chain):
 
@@ -214,7 +217,7 @@ class AlteredTableParser():
 
       #print(f"Statement {i} statement {j}")
 
-      is_use = re.search('use\s', j.lower())#.contains("*use")
+      is_use = re.search('use\s', j.lower())#.contains("*use ")
       is_use_db = re.search('use\s(database|schema)\s', j.lower())#.contains("*use")
       is_use_cat = re.search('use\scatalog\s', j.lower())#.contains("*use")
 
@@ -429,7 +432,12 @@ class Transaction(AlteredTableParser, TransactionException):
           sql_str = f"""DROP TABLE IF EXISTS {i};"""
         else:
           sql_str = f"""RESTORE TABLE {i} VERSION AS OF {version}"""
+
         self.spark.sql(sql_str)
+
+        ## Cleans up versions automatically 
+        self.spark.sql(f"""VACUUM {i};""")
+        
         print(f"Restored table {i} to version {version}!")
       
     except Exception as e:

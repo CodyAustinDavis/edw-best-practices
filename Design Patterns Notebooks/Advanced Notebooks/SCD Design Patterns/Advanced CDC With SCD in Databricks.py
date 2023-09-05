@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # Efficiently Managing Incoming Updates for Highly Scalable Analytics
 
 # COMMAND ----------
@@ -11,14 +11,14 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Read in Raw Data into Bronze Delta Table -- Append Only
 
 # COMMAND ----------
 
 # DBTITLE 1,Start From Scratch
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC DROP DATABASE IF EXISTS hls_cdc_delta_workshop CASCADE;
 # MAGIC CREATE DATABASE IF NOT EXISTS hls_cdc_delta_workshop;
 # MAGIC USE hls_cdc_delta_workshop;
@@ -49,7 +49,7 @@ dbutils.fs.rm(bronze_silver_scd2_checkpoint, recurse=True)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ### Raw --> Bronze: Append Only All Updates
 
 # COMMAND ----------
@@ -93,26 +93,26 @@ display(df_raw_bronze)
 
 # DBTITLE 1,Query Bronze Data
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM BronzePatientUpdates ORDER BY IngestTimestamp DESC;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Bronze --> Silver (1)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ### Bronze to Silver - SCD Type 1 With Delta CDF (What is the difference?)
 
 # COMMAND ----------
 
 # DBTITLE 1,Create Silver Stage if not Exists
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC CREATE TABLE IF NOT EXISTS PatientRecords_Silver_SCDTypeOne
 # MAGIC (
 # MAGIC Id STRING NOT NULL,
@@ -141,7 +141,7 @@ display(df_raw_bronze)
 # MAGIC --LOCATION <file_path>
 # MAGIC --PARTITIONED BY (cols)
 # MAGIC ;
-# MAGIC 
+# MAGIC
 # MAGIC CREATE TABLE IF NOT EXISTS PatientRecords_Silver_SCDTypeTwo
 # MAGIC (
 # MAGIC Id STRING NOT NULL,
@@ -231,21 +231,21 @@ def mergeFunctionSQL(updatesDf, microBatchId):
 
 # DBTITLE 1,Check out Silver Table
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM PatientRecords_Silver_SCDTypeOne ORDER BY IngestTimestamp DESC;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## When to use Delta CDF
-# MAGIC 
+# MAGIC
 # MAGIC <img src="https://databricks.com/wp-content/uploads/2021/06/Small-fraction-of-records-updated-in-each-batch-blog-img-12.jpg">
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Silver Updates with CDF
 
 # COMMAND ----------
@@ -257,7 +257,7 @@ def mergeFunctionSQL(updatesDf, microBatchId):
 
 # DBTITLE 1,Enable Change Data Feed From Bronze Table of All Updates
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC --We can also do this globally or at a cluster level for certain whole pipelines/jobs (also available in python api/scala)
 # MAGIC ALTER TABLE BronzePatientUpdates SET TBLPROPERTIES(delta.enableChangeDataFeed = true);
 # MAGIC ALTER TABLE PatientRecords_Silver_SCDTypeOne SET TBLPROPERTIES(delta.enableChangeDataFeed = true);
@@ -267,7 +267,7 @@ def mergeFunctionSQL(updatesDf, microBatchId):
 
 # DBTITLE 1,See Table Changes is empty (if ran linearly from the top)
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECt * FROM table_changes('BronzePatientUpdates', 1)
 
 # COMMAND ----------
@@ -353,7 +353,7 @@ bronze_df = (spark
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Bronze --> Silver: Merge Updates efficiently with Type 1 SCD (the above stream + CDC)
 
 # COMMAND ----------
@@ -420,13 +420,13 @@ def mergeCDFFunctionSQL(updatesDf, microBatchId):
 
 # DBTITLE 1,Check out final Table!
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM PatientRecords_Silver_SCDTypeOne ORDER BY IngestTimestamp DESC;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## SCD Type 2 Changes in Delta + Streaming! (Photon is a plus here)
 
 # COMMAND ----------
@@ -520,7 +520,7 @@ bronze_df = (spark
 
 # DBTITLE 1,This is the current "Bad version"
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM PatientRecords_Silver_SCDTypeTwo WHERE Id = "cccccccccc-6cc4-48a8-a0b1-99999999ccccc" ORDER BY IngestTimestamp DESC;
 
 # COMMAND ----------
@@ -579,7 +579,7 @@ bronze_df = (spark
 
 # DBTITLE 1,New Fixed Version with Change History!
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM PatientRecords_Silver_SCDTypeTwo WHERE Id = "cccccccccc-6cc4-48a8-a0b1-99999999ccccc" ORDER BY IngestTimestamp DESC;
 
 # COMMAND ----------

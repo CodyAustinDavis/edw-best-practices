@@ -1,8 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Controller notebook
-# MAGIC 
+# MAGIC
 # MAGIC Identifies and Orcestrates the sub jobs
 
 # COMMAND ----------

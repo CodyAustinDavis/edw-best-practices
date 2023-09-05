@@ -1,28 +1,28 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # This notebook generates a full data pipeline from databricks dataset - iot-stream using Autoloader + Structured Streaming
-# MAGIC 
+# MAGIC
 # MAGIC ## This creates 2 tables: 
-# MAGIC 
+# MAGIC
 # MAGIC <b> Database: </b> iot_dashboard
-# MAGIC 
+# MAGIC
 # MAGIC <b> Tables: </b> silver_sensors, silver_users 
-# MAGIC 
+# MAGIC
 # MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC <img src="https://databricks.com/wp-content/uploads/2022/03/delta-lake-medallion-architecture-2.jpeg" >
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Autoloader Benefits: 
-# MAGIC 
+# MAGIC
 # MAGIC 1. More Scalable Directory Listing (incremental + file notification)
 # MAGIC 2. Rocks DB State Store - Faster State management
 # MAGIC 3. Schema Inference + Merge Schema: https://docs.databricks.com/ingestion/auto-loader/schema.html
@@ -30,21 +30,21 @@
 # MAGIC 5. Complex Sources -- advanced Glob Path Filters: <b> .option("pathGlobFilter", "[a-zA-Z].csv") </b> 
 # MAGIC 6. Rescue data - automatically insert "bad" data into a rescued data column so you never lose data <b> .option("cloudFiles.rescuedDataColumn", "_rescued_data")  </b>
 # MAGIC 7: Flexible Schema Hints: <b> .option("cloudFiles.schemaHints", "tags map<string,string>, version int") </b> 
-# MAGIC 
+# MAGIC
 # MAGIC Much more!
-# MAGIC 
+# MAGIC
 # MAGIC ### Auto loader intro: 
 # MAGIC https://docs.databricks.com/ingestion/auto-loader/index.html
-# MAGIC 
+# MAGIC
 # MAGIC Rescue Data: https://docs.databricks.com/ingestion/auto-loader/schema.html#rescue
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC ### Auto Loader Full Options: 
-# MAGIC 
+# MAGIC
 # MAGIC https://docs.databricks.com/ingestion/auto-loader/options.html
 # MAGIC   
 # MAGIC ## Meta data options: 
-# MAGIC 
+# MAGIC
 # MAGIC Load the file metadata in auto loader for downstream continuity
 # MAGIC   https://docs.databricks.com/ingestion/file-metadata-column.html
 # MAGIC   
@@ -52,7 +52,7 @@
 # COMMAND ----------
 
 # MAGIC %python
-# MAGIC 
+# MAGIC
 # MAGIC file_source_location = "dbfs:/databricks-datasets/iot-stream/data-device/"
 # MAGIC checkpoint_location = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemo/bronze"
 # MAGIC checkpoint_location_silver = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemo/silver"
@@ -62,14 +62,14 @@
 
 # DBTITLE 1,Look at Raw Data Source
 # MAGIC %python 
-# MAGIC 
+# MAGIC
 # MAGIC dbutils.fs.ls('dbfs:/databricks-datasets/iot-stream/data-device/')
 
 # COMMAND ----------
 
 # DBTITLE 1,Imports
 # MAGIC %python
-# MAGIC 
+# MAGIC
 # MAGIC from pyspark.sql.functions import *
 # MAGIC from pyspark.sql.types import *
 
@@ -84,7 +84,7 @@
 
 # DBTITLE 1,Start Over
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC DROP TABLE IF EXISTS iot_dashboard_autoloader.bronze_sensors;
 
 # COMMAND ----------
@@ -139,13 +139,13 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC OPTIMIZE iot_dashboard_autoloader.bronze_sensors ZORDER BY (time_stamp, tweet_id);
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT 
 # MAGIC value,
 # MAGIC value:user_id AS unique_id,
@@ -156,17 +156,17 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 # COMMAND ----------
 
 # MAGIC %md 
-# MAGIC 
+# MAGIC
 # MAGIC ### Now we have data streaming into a bronze table at any clip/rate we want. 
 # MAGIC #### How can we stream into a silver table with merge?
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC <b> Stream options from a delta table: </b> https://docs.databricks.com/delta/delta-streaming.html
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC <li> <b> 1. Limit throughput rate: </b>  https://docs.databricks.com/delta/delta-streaming.html#limit-input-rate
 # MAGIC <li> <b> 2. Specify starting version or timestamp: </b>  https://docs.databricks.com/delta/delta-streaming.html#specify-initial-position
 # MAGIC <li> <b> 3. Ignore updates/deletes: </b>  https://docs.databricks.com/delta/delta-streaming.html#ignore-updates-and-deletes
@@ -299,5 +299,5 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM iot_dashboard.silver_sensors;

@@ -1,4 +1,2 @@
-sqlparse
-sql_metadata
 sqlglot
 pyarrow

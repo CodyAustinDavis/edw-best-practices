@@ -27,11 +27,27 @@ serverless_client = ServerlessClient(warehouse_id = warehouse_id, token=token, h
 # COMMAND ----------
 
 # DBTITLE 1,Basic sql drop-in command
-result_df = serverless_client.sql(sql_statement = sql_statement)
+"""
+Optional Params:
+1. full_results
+2. use_catalog = <catalog> - this is a command specific USE CATALOG statement for the single SQL command
+3. use_schema = <schema> - this is a command specific USE SCHEMA 
+
+"""
+
+result_df = serverless_client.sql(sql_statement = sql_statement) ## OPTIONAL: use_catalog="hive_metastore", use_schema="default"
 
 # COMMAND ----------
 
 # DBTITLE 1,Multi Statement Command - No Results just Status - Recommended for production
+"""
+Optional Params:
+1. full_results
+2. use_catalog = <catalog> - this is a command specific USE CATALOG statement for the single SQL command
+3. use_schema = <schema> - this is a command specific USE SCHEMA 
+
+"""
+
 result = serverless_client.submit_multiple_sql_commands(sql_statements = multi_statement, full_results=False) #session_catalog, session_schema are also optional parameters that will simulate a USE statement. True full_results just returns the whole API response for each query
 
 # COMMAND ----------

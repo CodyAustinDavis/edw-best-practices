@@ -1,6 +1,6 @@
 -- Databricks notebook source
 -- MAGIC %md
--- MAGIC 
+-- MAGIC
 -- MAGIC ## Create Gold Layer Tables that aggregate and clean up the data for BI / ML
 
 -- COMMAND ----------

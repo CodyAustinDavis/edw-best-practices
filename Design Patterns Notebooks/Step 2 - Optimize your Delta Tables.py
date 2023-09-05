@@ -1,20 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Table Optimization Methods
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Delta Tables
-# MAGIC 
+# MAGIC
 # MAGIC ### File Sizes
-# MAGIC 
+# MAGIC
 # MAGIC #### COMPACTION
-# MAGIC 
+# MAGIC
 # MAGIC ##### ZORDER 
-# MAGIC 
+# MAGIC
 # MAGIC ###### Bloom Filter
 
 # COMMAND ----------
@@ -40,7 +40,7 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC MERGE INTO iot_dashboard.silver_sensors_test1 AS target
 # MAGIC USING (SELECT Id::integer,
 # MAGIC               device_id::integer,
@@ -61,17 +61,17 @@
 # MAGIC   target.num_steps = source.num_steps,
 # MAGIC   target.timestamp = source.timestamp
 # MAGIC WHEN NOT MATCHED THEN INSERT *;
-# MAGIC 
+# MAGIC
 # MAGIC -- Without optimizing tables 8.82 seconds
 # MAGIC -- After optimizing by merge columns 19 seconds
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC -- You want to optimize by high cardinality columns like ids, timestamps, strings
 # MAGIC -- ON MERGE COLUMNS, then timeseries columns, then commonly used columns in queries
-# MAGIC 
+# MAGIC
 # MAGIC --This operation is incremental
 # MAGIC --OPTIMIZE iot_dashboard.bronze_sensors_test1 ZORDER BY (Id, user_id, device_id);
 # MAGIC OPTIMIZE iot_dashboard.silver_sensors_test1 ZORDER BY (user_id, device_id, Id);
@@ -79,9 +79,9 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## What about queries on this table?
-# MAGIC 
+# MAGIC
 # MAGIC 1. ZORDER by commonly joined columns
 # MAGIC 2. Partition by larger chunks only if needed
 # MAGIC 3. Keep important columns in front of tables
@@ -90,14 +90,14 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Exercise 1: Change optimization strategies for single point filters
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC OPTIMIZE iot_dashboard.silver_sensors_test1 ZORDER BY (user_id);
-# MAGIC 
+# MAGIC
 # MAGIC -- by user_id, timestamp -- 8 files pruned
 # MAGIC -- by just user id selecting on user_id -- 34 files pruned (1 read) all but one
 # MAGIC -- by just timestamp -- no files pruned when selecting on user_id
@@ -105,7 +105,7 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC CREATE OR REPLACE VIEW iot_dashboard.hourly_summary_statistics
 # MAGIC AS
 # MAGIC SELECT user_id,
@@ -125,20 +125,20 @@
 # MAGIC -- by user_id, timestamp -- 8 files pruned
 # MAGIC -- by just user id selecting on user_id -- 34 files pruned (1 read) all but one
 # MAGIC -- by just timestamp -- no files pruned when selecting on user_is
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM iot_dashboard.hourly_summary_statistics WHERe user_id = 1
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ## Exercise 2: Multi-dimensional filters and optimzation
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC SELECT MIN(HourBucket), MAX(HourBucket)
 # MAGIC FROM iot_dashboard.hourly_summary_statistics 
 
@@ -146,7 +146,7 @@
 
 # MAGIC %sql
 # MAGIC OPTIMIZE iot_dashboard.silver_sensors_test1 ZORDER BY (user_id, timestamp);
-# MAGIC 
+# MAGIC
 # MAGIC -- by user_id, timestamp -- 2 files pruned, 29 scanned
 # MAGIC -- by timestamp, user_id --  does order matter? 2 files pruned, 29 scanned, - not really
 # MAGIC -- How to make this more selective? -- Hour bucket is abstracting the filter pushdown, lets try just the raw table
@@ -155,7 +155,7 @@
 
 # DBTITLE 1,Exercise 2: Optimizing Multi-dimensional queries
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * 
 # MAGIC FROM iot_dashboard.hourly_summary_statistics 
 # MAGIC WHERE user_id = 1
@@ -165,9 +165,9 @@
 
 # DBTITLE 1,Lesson learned -- let Delta do the filtering first, then group and aggregate -- subqueries are actually better
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC --28 pruned, 3 files read
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * 
 # MAGIC FROM iot_dashboard.silver_sensors_test1
 # MAGIC WHERE user_id = 1
@@ -176,7 +176,7 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC CREATE OR REPLACE VIEW iot_dashboard.test_filter_pushdown
 # MAGIC AS 
 # MAGIC WITH raw_pushdown AS
@@ -198,13 +198,13 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECT * FROM iot_dashboard.test_filter_pushdown
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC CREATE OR REPLACE VIEW iot_dashboard.smoothed_hourly_statistics
 # MAGIC AS 
 # MAGIC SELECT *,
@@ -257,5 +257,5 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC 
+# MAGIC
 # MAGIC SELECt * FROM iot_dashboard.smoothed_hourly_statistics WHERE user_id = 1

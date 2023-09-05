@@ -1,22 +1,22 @@
 -- Databricks notebook source
 -- MAGIC %md
--- MAGIC 
+-- MAGIC
 -- MAGIC # This notebook generates a full data pipeline from databricks dataset - iot-stream
--- MAGIC 
+-- MAGIC
 -- MAGIC #### Define the SQL - Add as a library to a DLT pipeline, and run the pipeline!
--- MAGIC 
+-- MAGIC
 -- MAGIC ## This creates 2 tables: 
--- MAGIC 
+-- MAGIC
 -- MAGIC <b> Database: </b> iot_dashboard
--- MAGIC 
+-- MAGIC
 -- MAGIC <b> Tables: </b> silver_sensors, silver_users 
--- MAGIC 
+-- MAGIC
 -- MAGIC <b> Params: </b> StartOver (Yes/No) - allows user to truncate and reload pipeline
 
 -- COMMAND ----------
 
 -- MAGIC %md 
--- MAGIC 
+-- MAGIC
 -- MAGIC ## This is built as a library for a Delta Live Tables pipeline
 
 -- COMMAND ----------
@@ -68,13 +68,13 @@ FROM cloud_files("/databricks-datasets/iot-stream/data-device/", "json")
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC 
+-- MAGIC
 -- MAGIC ## Process Change data with updates or deletes 
 -- MAGIC API Docs: https://docs.databricks.com/data-engineering/delta-live-tables/delta-live-tables-cdc.html
--- MAGIC 
--- MAGIC 
+-- MAGIC
+-- MAGIC
 -- MAGIC ### Automatically store change as SCD 1 or SCD 2 Type changes
--- MAGIC 
+-- MAGIC
 -- MAGIC SCD 1/2 Docs: https://docs.databricks.com/data-engineering/delta-live-tables/delta-live-tables-cdc.html#language-sql
 
 -- COMMAND ----------
@@ -120,7 +120,7 @@ STORED AS
 -- COMMAND ----------
 
 -- MAGIC %md 
--- MAGIC 
+-- MAGIC
 -- MAGIC ## FULL REFRESH EXAMPLE - Ingest Full User Data Set Each Load
 
 -- COMMAND ----------

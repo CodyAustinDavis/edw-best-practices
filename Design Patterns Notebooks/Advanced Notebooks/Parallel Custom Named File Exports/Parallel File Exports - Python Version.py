@@ -1,10 +1,10 @@
 # Databricks notebook source
 # MAGIC %md 
-# MAGIC 
+# MAGIC
 # MAGIC # Python Version
 # MAGIC ### Author: Cody Austin Davis
 # MAGIC ### Date: 2/22/2023
-# MAGIC 
+# MAGIC
 # MAGIC This notebook shows users how to rename/move files from one s3 location/file name to another in parallel using spark. 
 
 # COMMAND ----------
@@ -94,28 +94,28 @@ dbutils.fs.ls("s3://oetrta/codyaustindavis/parallelfile_source/renamed/"
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # Scala Version
 
 # COMMAND ----------
 
 # DBTITLE 1,Define scala file renaming function
 # MAGIC %scala 
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC def getNewFilePath(sourcePath: String): String = {
 # MAGIC   val source_path = sourcePath;
-# MAGIC 
+# MAGIC
 # MAGIC   val slice_len = source_path.split("/").length - 1;
 # MAGIC   val source_path_root = source_path.split("/").slice(0, slice_len);
 # MAGIC   val source_path_file_name = source_path.split("/").last;
-# MAGIC 
+# MAGIC
 # MAGIC   // any arbitrary file rename logic
 # MAGIC   val new_path_file_name = "renamed/"+source_path_file_name;
 # MAGIC   
 # MAGIC   
 # MAGIC   val new_path = source_path_root.mkString("/") + "/" + new_path_file_name;
-# MAGIC 
+# MAGIC
 # MAGIC   return new_path
 # MAGIC }
 
@@ -123,9 +123,9 @@ dbutils.fs.ls("s3://oetrta/codyaustindavis/parallelfile_source/renamed/"
 
 # DBTITLE 1,Test Scala File Renaming function
 # MAGIC %scala 
-# MAGIC 
+# MAGIC
 # MAGIC val test_new_path = getNewFilePath("dbfs:/databricks-datasets/iot-stream/data-device/part-00003.json.gz")
-# MAGIC 
+# MAGIC
 # MAGIC println(test_new_path)
 
 # COMMAND ----------
@@ -133,24 +133,24 @@ dbutils.fs.ls("s3://oetrta/codyaustindavis/parallelfile_source/renamed/"
 # DBTITLE 1,Broadcast Configs to Executors
 # MAGIC %scala 
 # MAGIC import org.apache.hadoop.fs
-# MAGIC 
+# MAGIC
 # MAGIC // maybe we need to register access keys here? not sure yet. Still dealing with Auth issues
 # MAGIC val conf = new org.apache.spark.util.SerializableConfiguration(sc.hadoopConfiguration)
-# MAGIC 
+# MAGIC
 # MAGIC val broadcastConf = sc.broadcast(conf)
-# MAGIC 
+# MAGIC
 # MAGIC print(conf.value)
 
 # COMMAND ----------
 
 # DBTITLE 1,Run file renaming and moving for each row (need to add AUTH)
 # MAGIC %scala 
-# MAGIC 
+# MAGIC
 # MAGIC import org.apache.hadoop.fs._
-# MAGIC 
+# MAGIC
 # MAGIC // root bucket of where original files were dropped
 # MAGIC val filesToCopy = dbutils.fs.ls("dbfs:/databricks-datasets/iot-stream/data-device/").map(_.path)
-# MAGIC 
+# MAGIC
 # MAGIC spark.sparkContext.parallelize(filesToCopy).foreachPartition(rows => rows.foreach {
 # MAGIC   
 # MAGIC   file => 
@@ -174,10 +174,10 @@ dbutils.fs.ls("s3://oetrta/codyaustindavis/parallelfile_source/renamed/"
 
 # DBTITLE 1,Look at files to Copy
 # MAGIC %scala
-# MAGIC 
+# MAGIC
 # MAGIC val filesToCopy = dbutils.fs.ls("dbfs:/databricks-datasets/iot-stream/data-device/").map(_.path)
-# MAGIC 
-# MAGIC 
+# MAGIC
+# MAGIC
 # MAGIC val filesDf = spark.sparkContext.parallelize(filesToCopy).toDF()
-# MAGIC 
+# MAGIC
 # MAGIC display(filesDf)

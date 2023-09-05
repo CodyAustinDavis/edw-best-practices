@@ -64,6 +64,7 @@ class ServerlessClient():
     ## Infer hostname from same workspace
     if host_name is not None:
       self.host_name = host_name
+
     else:
       #self.host_name = json.loads(self.dbutils.entry_point.getDbutils().notebook().getContext().toJson()).get("tags").get("browserHostName")
       self.host_name = self.dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None).replace("https://", "")
@@ -129,12 +130,13 @@ class ServerlessClient():
     self.statement_return_payload = None
     return
 
+
   def create_df_from_json_array(self, result_data, result_schema) -> DataFrame:
-    ## input, result data (JSONARRAY, raw result schema)
 
+    ## Input, result data (JSONARRAY, raw result schema)
     ## Handle no result calculation
-
     ## IF NOT RESULT, BUILD RETURN DF FROM STATUS MESSAGE
+
     if (result_data is None or result_schema is None):
 
 
@@ -145,11 +147,12 @@ class ServerlessClient():
 
         field_names = list(result_json_array.keys())
     
-        clean_df = self.spark.createDataFrame([result_json_array]).select("statement_id","status", "statement_text","result")
+        clean_df = self.spark.createDataFrame([result_json_array]).select("statement_id","status","statement_text","result")
 
         return clean_df
 
     else:
+
         field_names = [i.get("name") for i in result_schema]
         temp_df = self.spark.createDataFrame(result_data).toDF(*field_names)
 
@@ -402,7 +405,7 @@ class ServerlessClient():
 
 
   ## for large results -- compiles external links together 
-  def submit_sql_async_external_links(self, sql_statement: str, return_type = "dataframe", result_format = "ARROW_STREAM"):
+  def submit_sql_async_external_links(self, sql_statement: str, return_type = "dataframe", result_format = "ARROW_STREAM", use_catalog=None, use_schema=None):
 
     #EXTERNAL_LINKS + ARROW_STREAM
     ### Can return "dataframe" or the resulting payload with "message" or just status with "status"
@@ -417,9 +420,14 @@ class ServerlessClient():
     "disposition": "EXTERNAL_LINKS"
     }
     
-    ## Handle session defaults if provided
-    if self.session_catalog is not None:
+    ## Handle query/session defaults if provided
+    if use_catalog is not None:
+      request_string["catalog"] = use_catalog
+    elif self.session_catalog is not None:
       request_string["catalog"] = self.session_catalog
+
+    if use_schema is not None:
+      request_string["schema"] = use_schema
     if self.session_schema is not None:
       request_string["schema"] = self.session_schema
 
@@ -467,7 +475,7 @@ class ServerlessClient():
 
 
   ## submit async query (the additional methods couple the ability to cancel and get the status of the async query)
-  def submit_sql_sync_in_line(self, sql_statement: str, return_type = "dataframe"):
+  def submit_sql_sync_in_line(self, sql_statement: str, return_type = "dataframe", use_catalog=None, use_schema=None):
 
     ### Can return "dataframe" or the resulting payload with "message" or just status with "status"
     # INLINE + JSON_ARRAY
@@ -481,12 +489,16 @@ class ServerlessClient():
     "disposition": "INLINE"
     }
 
-    ## Handle session defaults if provided
-    if self.session_catalog is not None:
+    ## Handle query/session defaults if provided
+    if use_catalog is not None:
+      request_string["catalog"] = use_catalog
+    elif self.session_catalog is not None:
       request_string["catalog"] = self.session_catalog
+
+    if use_schema is not None:
+      request_string["schema"] = use_schema
     if self.session_schema is not None:
       request_string["schema"] = self.session_schema
-
 
     ## Convert dict to json
     request_payload = json.dumps(request_string)
@@ -503,7 +515,6 @@ class ServerlessClient():
     ## Check for status, poll until SUCCEEDED or FAILED or CLOSED
 
     if self.statement_status in ['FAILED', 'CLOSED']:
-
         raise(QueryFailException(message=f"Query failed in line with message: \n {self.statement_return_payload}", errors=self.statement_return_payload))
 
     elif self.statement_status in ["SUCCEEDED"]:
@@ -535,14 +546,13 @@ class ServerlessClient():
   ### These are the user-facing wrappers that abstract away the need to deal with async vs sync and polling
 
   ## This method wraps all the async functions above into a synchronous call to mimic spark.sql()
-  def sql(self, sql_statement: str, process_mode = "default", return_type = "dataframe") -> DataFrame:
+  def sql(self, sql_statement: str, process_mode = "default", return_type = "dataframe", use_catalog=None, use_schema=None) -> DataFrame:
     
     """
     process_modes
     default - will automatically try single threaded synchrounous response, and if results are too big it will chunk it
     inline - will only use the inline sync command
     parallel - will only use the async with external links command
-
     """
 
     if process_mode == "default":
@@ -551,38 +561,36 @@ class ServerlessClient():
       try:
         ## Try small version first - if results are too big it will fail automatically
         ## Since we cant generically anticipate result size, trying this first is the only way unless users manually uses one of the underlying functions if they know
-        final_df = self.submit_sql_sync_in_line(sql_statement, return_type = return_type)
+        final_df = self.submit_sql_sync_in_line(sql_statement, return_type = return_type, use_catalog=use_catalog, use_schema=use_schema)
         return final_df
 
       except:
         if self.verbose == True:
           print("Result too large to inline... moving to external links...")
         
-        final_df = self.submit_sql_async_external_links(sql_statement, return_type = return_type)
+        final_df = self.submit_sql_async_external_links(sql_statement, return_type = return_type, use_catalog=use_catalog, use_schema=use_schema)
         return final_df
       
     elif process_mode == "inline":
-      final_df = self.submit_sql_sync_in_line(sql_statement, return_type = return_type)
+      final_df = self.submit_sql_sync_in_line(sql_statement, return_type = return_type, use_catalog=use_catalog, use_schema=use_schema)
       return final_df
     
     elif process_mode =="parallel":
-      final_df = self.submit_sql_async_external_links(sql_statement, return_type = return_type)
-      return final_df  
+      final_df = self.submit_sql_async_external_links(sql_statement, return_type = return_type, use_catalog=use_catalog, use_schema=use_schema)
+      return final_df
 
 
 
    ## This method wraps all the async functions above into a synchronous call to mimic spark.sql()
-  def sql_no_results(self, sql_statement: str, process_mode = "default"):
-    
-    return_msg = self.sql(sql_statement = sql_statement, process_mode = process_mode, return_type = "status")
-
+  def sql_no_results(self, sql_statement: str, process_mode = "default", use_catalog=None, use_schema=None):
+    return_msg = self.sql(sql_statement = sql_statement, process_mode = process_mode, return_type = "status", use_catalog=use_catalog, use_schema=use_schema)
     ## Every time this is called, it abandons the previous statement id and replaces it with a new one
     return  return_msg
-
-
+  
+  
 
   ## Submits chains of SQL commands with ; delimeter and tracks status of each command, results status of all commands
-  def submit_multiple_sql_commands(self, sql_statements: str, process_mode = "default", return_type = "message", full_results=False): 
+  def submit_multiple_sql_commands(self, sql_statements: str, process_mode = "default", return_type = "message", full_results=False, use_catalog=None, use_schema=None): 
 
     self.clear_query_state()
 
@@ -597,7 +605,7 @@ class ServerlessClient():
 
     for i, query in enumerate(command_array):
 
-      return_msg = self.sql(sql_statement = query, process_mode = process_mode, return_type = "message")
+      return_msg = self.sql(sql_statement = query, process_mode = process_mode, return_type = "message", use_catalog=use_catalog, use_schema=use_schema)
       command_state = return_msg.get("status").get("state")
 
       if command_state != "SUCCEEDED":
@@ -621,8 +629,9 @@ class ServerlessClient():
         raise(QueryFailException(message=f"FAILED: One of the queries in the statements failed with error: \n {self.multi_statement_result_state}", errors=self.multi_statement_result_state))
 
 
+
   ## Submit SQL commands with NO results, just the API messages / success or failure
-  def submit_multiple_sql_commands_last_results(self, sql_statements: str, process_mode = "default"): 
+  def submit_multiple_sql_commands_last_results(self, sql_statements: str, process_mode = "default", use_catalog=None, use_schema=None): 
 
     ## This function could be better improved for further tracking of final results, this is really not a great design pattern in production 
     ## Because if a query fails somewhere in the chain and we still return the results of the last query, this currently doesnt track the failures and return them
@@ -645,7 +654,7 @@ class ServerlessClient():
         if i == (len(command_array) - 1):
 
 
-          return_df = self.sql(sql_statement = query, process_mode = process_mode, return_type = "dataframe")
+          return_df = self.sql(sql_statement = query, process_mode = process_mode, return_type = "dataframe", use_catalog=use_catalog, use_schema=use_schema)
 
           ## Get the last query state results as well
           command_state = self.statement_status
@@ -676,7 +685,7 @@ class ServerlessClient():
 
 
         else:
-          return_msg = self.sql(sql_statement = query, process_mode = process_mode, return_type = "message")
+          return_msg = self.sql(sql_statement = query, process_mode = process_mode, return_type = "message", use_catalog=use_catalog, use_schema=use_schema)
           command_state = return_msg.get("status").get("state")
 
           if self.verbose == True:
