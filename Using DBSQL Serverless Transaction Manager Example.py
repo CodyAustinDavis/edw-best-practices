@@ -130,6 +130,7 @@ host_name --> optional, will try to infer same workspace url
 
 execute_sql_transaction params: 
 return_type --> "message", "last_results". "message" will return status of query chain. "last_result" will run all statements and return the last results of the final query in the chain
+
 """
 
 result_df = serverless_client_t.execute_dbsql_transaction(sql_string = sqlString)

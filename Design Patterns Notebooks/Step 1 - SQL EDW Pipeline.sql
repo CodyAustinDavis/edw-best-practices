@@ -225,6 +225,9 @@ OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (timestamp);
 
 
 -- Truncate bronze batch once successfully loaded
+
+-- This is the classical batch design pattern - but we can also now use streaming tables
+
 TRUNCATE TABLE iot_dashboard.bronze_sensors;
 
 -- COMMAND ----------
@@ -250,7 +253,7 @@ SELECT * FROM iot_dashboard.silver_sensors VERSION AS OF 1;
 -- MAGIC
 -- MAGIC ## Partitions - Do not over partition - usually ZORDERING covers what you need - even in big tables
 -- MAGIC ### File Sizes - smaller for BI heavy and update heavy tables 64mb to 128mb
--- MAGIC #### Order of files -- ZORDER(col,col) -- ZORDER on most used filtering/join columns, in order of cardinality like a funnel
+-- MAGIC #### Order of files -- ZORDER(col,col) / CLUSTER BY -- ZORDER on most used filtering/join columns, in order of cardinality like a funnel
 -- MAGIC ##### Indexes -- For highly selective queries - need to create index first then fill with data "needle in a haystack"
 
 -- COMMAND ----------
@@ -261,13 +264,14 @@ SELECT * FROM iot_dashboard.silver_sensors VERSION AS OF 1;
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Change Size of Files - will be changed when files are optimized
 ALTER TABLE iot_dashboard.silver_sensors SET TBLPROPERTIES ('delta.targetFileSize'='64mb');
 
 -- COMMAND ----------
 
 -- DBTITLE 1,Table Optimizations
 -- You want to optimize by high cardinality columns like ids, timestamps, strings
-OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (user_id, device_id, timestamp);
+OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (device_id, timestamp);
 
 -- COMMAND ----------
 
@@ -278,9 +282,9 @@ OPTIMIZE iot_dashboard.silver_sensors ZORDER BY (user_id, device_id, timestamp);
 
 -- COMMAND ----------
 
---Bloom filters need to exist first, so if you add an index later you need to reprocess the files (an optimize, etc.)
-
+--Bloom filters need to exist first, so if you add an index later you need to reprocess the files (an optimize, insert, etc.)
 --Ideally a column that is highly selective but not used in z-order (text, other timestamps, etc.)
+
 CREATE BLOOMFILTER INDEX
 ON TABLE iot_dashboard.silver_sensors
 FOR COLUMNS(device_id OPTIONS (fpp=0.1, numItems=50000000))

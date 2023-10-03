@@ -54,9 +54,9 @@
 # MAGIC %python
 # MAGIC
 # MAGIC file_source_location = "dbfs:/databricks-datasets/iot-stream/data-device/"
-# MAGIC checkpoint_location = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemo/bronze"
-# MAGIC checkpoint_location_silver = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemo/silver"
-# MAGIC autoloader_schema_location = f"dbfs:/FileStore/shared_uploads/cody.davis@databricks.com/IotDemoCheckpoints/AutoloaderDemoSchema/"
+# MAGIC checkpoint_location = f"dbfs:/FileStore/shared_uploads/intro_design_patterns/IotDemoCheckpoints/AutoloaderDemo/bronze"
+# MAGIC checkpoint_location_silver = f"dbfs:/FileStore/shared_uploads/intro_design_patterns/IotDemoCheckpoints/AutoloaderDemo/silver"
+# MAGIC autoloader_schema_location = f"dbfs:/FileStore/shared_uploads/intro_design_patterns/IotDemoCheckpoints/AutoloaderDemoSchema/"
 
 # COMMAND ----------
 

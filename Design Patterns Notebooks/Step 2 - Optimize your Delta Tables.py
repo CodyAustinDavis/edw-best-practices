@@ -1,37 +1,47 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC
-# MAGIC ## Table Optimization Methods
+# MAGIC # Delta Table Optimization Methods Tutorial
+# MAGIC
+# MAGIC This notebook walks through the various methods and consideration when tuning / optimizing Delta tables in SQL
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC
-# MAGIC ## Delta Tables
+# MAGIC ## Delta Tables Optimization Knobs
 # MAGIC
 # MAGIC ### File Sizes
 # MAGIC
-# MAGIC #### COMPACTION
+# MAGIC #### COMPACTION - OPTIMIZE
 # MAGIC
-# MAGIC ##### ZORDER 
+# MAGIC ##### ZORDER / CLUSTER BY (liquid tables)
 # MAGIC
 # MAGIC ###### Bloom Filter
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC
+# MAGIC ### Optimizing for UPSERTS
+# MAGIC
+# MAGIC Commands 4-8
+
+# COMMAND ----------
+
 # MAGIC %sql
-# MAGIC DROP TABLE IF EXISTS iot_dashboard.bronze_sensors_test1;
-# MAGIC CREATE OR REPLACE TABLE iot_dashboard.bronze_sensors_test1
+# MAGIC DROP TABLE IF EXISTS iot_dashboard.bronze_sensors_optimization;
+# MAGIC CREATE OR REPLACE TABLE iot_dashboard.bronze_sensors_optimization
 # MAGIC USING DELTA
-# MAGIC TBLPROPERTIES("delta.targetFileSize"="2mb") --64-128 mb for tables with heavy updates or if used for BI
+# MAGIC TBLPROPERTIES("delta.targetFileSize"="2mb") --2-128 mb for tables with heavy updates or if used for BI
 # MAGIC AS 
 # MAGIC (SELECT * FROM iot_dashboard.silver_sensors LIMIT 10000) --Only load a subset for sample MERGE;
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC DROP TABLE IF EXISTS iot_dashboard.silver_sensors_test1;
-# MAGIC CREATE OR REPLACE TABLE iot_dashboard.silver_sensors_test1
+# MAGIC DROP TABLE IF EXISTS iot_dashboard.silver_sensors_optimization;
+# MAGIC CREATE OR REPLACE TABLE iot_dashboard.silver_sensors_optimization
 # MAGIC USING DELTA
 # MAGIC TBLPROPERTIES("delta.targetFileSize"="2mb")
 # MAGIC AS 
@@ -41,7 +51,7 @@
 
 # MAGIC %sql
 # MAGIC
-# MAGIC MERGE INTO iot_dashboard.silver_sensors_test1 AS target
+# MAGIC MERGE INTO iot_dashboard.silver_sensors_optimization AS target
 # MAGIC USING (SELECT Id::integer,
 # MAGIC               device_id::integer,
 # MAGIC               user_id::integer,
@@ -50,7 +60,7 @@
 # MAGIC               num_steps::decimal,
 # MAGIC               timestamp::timestamp,
 # MAGIC               value::string
-# MAGIC               FROM iot_dashboard.bronze_sensors_test1) AS source
+# MAGIC               FROM iot_dashboard.bronze_sensors_optimization) AS source
 # MAGIC ON source.Id = target.Id
 # MAGIC AND source.user_id = target.user_id
 # MAGIC AND source.device_id = target.device_id
@@ -67,6 +77,12 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC
+# MAGIC ## Run CREATE/REPLACE and MERGE statements, track runtime, then run OPTIMIZE statement and run all create/merge statements again to look at spark plan differences
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC
 # MAGIC -- You want to optimize by high cardinality columns like ids, timestamps, strings
@@ -74,7 +90,7 @@
 # MAGIC
 # MAGIC --This operation is incremental
 # MAGIC --OPTIMIZE iot_dashboard.bronze_sensors_test1 ZORDER BY (Id, user_id, device_id);
-# MAGIC OPTIMIZE iot_dashboard.silver_sensors_test1 ZORDER BY (user_id, device_id, Id);
+# MAGIC OPTIMIZE iot_dashboard.silver_sensors_optimization ZORDER BY (user_id, device_id, Id);
 
 # COMMAND ----------
 
@@ -96,7 +112,7 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC OPTIMIZE iot_dashboard.silver_sensors_test1 ZORDER BY (user_id);
+# MAGIC OPTIMIZE iot_dashboard.silver_sensors_optimization ZORDER BY (user_id);
 # MAGIC
 # MAGIC -- by user_id, timestamp -- 8 files pruned
 # MAGIC -- by just user id selecting on user_id -- 34 files pruned (1 read) all but one
@@ -104,6 +120,7 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Create gold aggregate VIEW
 # MAGIC %sql
 # MAGIC
 # MAGIC CREATE OR REPLACE VIEW iot_dashboard.hourly_summary_statistics
@@ -113,7 +130,7 @@
 # MAGIC AVG(num_steps) AS AvgNumStepsAcrossDevices,
 # MAGIC AVG(calories_burnt) AS AvgCaloriesBurnedAcrossDevices,
 # MAGIC AVG(miles_walked) AS AvgMilesWalkedAcrossDevices
-# MAGIC FROM iot_dashboard.silver_sensors_test1
+# MAGIC FROM iot_dashboard.silver_sensors_optimization
 # MAGIC GROUP BY user_id,date_trunc('hour', timestamp) -- wrapping a function around a column
 # MAGIC ORDER BY HourBucket
 
@@ -121,10 +138,17 @@
 
 # DBTITLE 1,Exercise 1: Tuning for single column queries
 # MAGIC %sql
-# MAGIC -- After optimize look at user_id files prune
+# MAGIC
+# MAGIC -- LOOK AT BEFORE AND AFTER QUERIES for OPTIMIZE PRE/POST
+# MAGIC
+# MAGIC -- After optimize look at user_id files pruned
 # MAGIC -- by user_id, timestamp -- 8 files pruned
 # MAGIC -- by just user id selecting on user_id -- 34 files pruned (1 read) all but one
 # MAGIC -- by just timestamp -- no files pruned when selecting on user_is
+# MAGIC
+# MAGIC -- POST OPTIMIZE SCAN METRICS
+# MAGIC --number of files pruned	33
+# MAGIC -- number of files read	1
 # MAGIC
 # MAGIC SELECT * FROM iot_dashboard.hourly_summary_statistics WHERe user_id = 1
 
@@ -145,7 +169,7 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC OPTIMIZE iot_dashboard.silver_sensors_test1 ZORDER BY (user_id, timestamp);
+# MAGIC OPTIMIZE iot_dashboard.silver_sensors_optimization ZORDER BY (user_id, timestamp);
 # MAGIC
 # MAGIC -- by user_id, timestamp -- 2 files pruned, 29 scanned
 # MAGIC -- by timestamp, user_id --  does order matter? 2 files pruned, 29 scanned, - not really
@@ -166,15 +190,19 @@
 # DBTITLE 1,Lesson learned -- let Delta do the filtering first, then group and aggregate -- subqueries are actually better
 # MAGIC %sql
 # MAGIC
+# MAGIC -- Look at SPARK QUERY PLAN SCAN node
+# MAGIC -- How many files are pruned/read? 
+# MAGIC -- Try optimizing the table on different columns (1,2,3) -- see what happens!
 # MAGIC --28 pruned, 3 files read
 # MAGIC
 # MAGIC SELECT * 
-# MAGIC FROM iot_dashboard.silver_sensors_test1
+# MAGIC FROM iot_dashboard.silver_sensors_optimization
 # MAGIC WHERE user_id = 1
 # MAGIC AND timestamp BETWEEN "2018-07-22T00:00:00.000+0000"::timestamp AND "2018-07-22T01:00:00.000+0000"::timestamp
 
 # COMMAND ----------
 
+# DBTITLE 1,Automate Certain Pushdown Filter Rules in VIEWs
 # MAGIC %sql
 # MAGIC
 # MAGIC CREATE OR REPLACE VIEW iot_dashboard.test_filter_pushdown
@@ -182,7 +210,7 @@
 # MAGIC WITH raw_pushdown AS
 # MAGIC (
 # MAGIC   SELECT * 
-# MAGIC   FROM iot_dashboard.silver_sensors_test1
+# MAGIC   FROM iot_dashboard.silver_sensors_optimization
 # MAGIC   WHERE user_id = 1
 # MAGIC   AND timestamp BETWEEN "2018-07-22T00:00:00.000+0000"::timestamp AND "2018-07-22T01:00:00.000+0000"::timestamp
 # MAGIC )
@@ -199,10 +227,12 @@
 
 # MAGIC %sql
 # MAGIC
+# MAGIC -- Now pruning is automatically done and manual users do not have to remember each time for common views
 # MAGIC SELECT * FROM iot_dashboard.test_filter_pushdown
 
 # COMMAND ----------
 
+# DBTITLE 1,Efficacy on More Complex VIEWs
 # MAGIC %sql
 # MAGIC
 # MAGIC CREATE OR REPLACE VIEW iot_dashboard.smoothed_hourly_statistics
@@ -256,6 +286,8 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,File Pruning on Complex VIEWs
 # MAGIC %sql
 # MAGIC
+# MAGIC -- How are files being pruned in the SCAN node?
 # MAGIC SELECt * FROM iot_dashboard.smoothed_hourly_statistics WHERE user_id = 1
