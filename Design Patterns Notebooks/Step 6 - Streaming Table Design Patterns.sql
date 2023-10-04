@@ -12,22 +12,22 @@
 -- MAGIC
 -- MAGIC ### FAQ: 
 -- MAGIC
--- MAGIC 1. If I REFRESH a streaming table in a Multi task job, and another task depends on it, will that task wait until the streaming table is complete? 
+-- MAGIC 1. <b> Q: </b> If I REFRESH a streaming table in a Multi task job, and another task depends on it, will that task wait until the streaming table is complete? What do I do to make sure the previous refresh completes before the rest of the downstream tasks start?
 -- MAGIC
--- MAGIC 2. How can I read incrementally from a streaming table? Can I stream from it in python? Can I do batch style and delete data from the table once it is processed downstream without breaking things?
+-- MAGIC 2. <b> Q: </b> How can I read incrementally from a streaming table? Can I stream from it in python? Can I do batch style and delete data from the table once it is processed downstream without breaking things?
 -- MAGIC
--- MAGIC 3. What if I want to UPSERT/ MERGE data into a target table? Are materialized views my only option?
+-- MAGIC 3. <b> Q: </b> What if I want to UPSERT/ MERGE data into a target table? Are materialized views my only option?
 -- MAGIC
--- MAGIC 4. Can I use streaming tables for ingesting into delta, then manage batches myself downstream with timestamp watermarking? This is a popular EDW loading pattern and I dont want to move to all DLT based development. All I want is streaming tables to create batches for me, then I want to do anything I want to, similar to staging tables in batch loading. This removes all restrictions I have downstream. How do I do this? 
+-- MAGIC 4. <b> Q: </b> Can I use streaming tables for ingesting into delta, then manage batches myself downstream with timestamp watermarking? This is a popular EDW loading pattern and I dont want to move to all DLT based development. All I want is streaming tables to create batches for me, then I want to do anything I want to, similar to staging tables in batch loading. This removes all restrictions I have downstream. How do I do this? 
 -- MAGIC
 -- MAGIC
 -- MAGIC 5. <b> Q: </b> Can I optimize / sort my streaming tables? I would need to do this to do manual watermarking to filter on ingest timestamp / checksum. 
 -- MAGIC
 -- MAGIC <b> A: </b> Not streaming tables. You can only cluster/zorder complete / non-streaming tables. You would have to use a different method to efficiently incrementally process by sorted timestamps manually if not using MVs.
 -- MAGIC
--- MAGIC 6. If I cant, and I dont want to use materialized views or full loads for ALL downstream tables, then I would just use DBT + COPY INTO drops.
+-- MAGIC 6. <b> Q: </b> If I cant, and I dont want to use materialized views or full loads for ALL downstream tables, then I would just use DBT + COPY INTO drops.
 -- MAGIC
--- MAGIC 7. Can I accomplish this with COPY INTO if I need a classical loading pattern? Would be great if I could do the same thing but with a Kafka data source as well. 
+-- MAGIC 7. <b> Q: </b> Can I accomplish this with COPY INTO if I need a classical loading pattern? Would be great if I could do the same thing but with a Kafka data source as well. 
 -- MAGIC
 -- MAGIC -----
 -- MAGIC
