@@ -29,12 +29,23 @@
 -- MAGIC
 -- MAGIC 7. <b> Q: </b> Can I accomplish this with COPY INTO if I need a classical loading pattern? Would be great if I could do the same thing but with a Kafka data source as well. 
 -- MAGIC
+-- MAGIC 8. <b> Q: </b> Can I look at these ST and MV refreshes in the DBSQL query history? I want to look at performance of them.
+-- MAGIC
 -- MAGIC -----
 -- MAGIC
 -- MAGIC Streaming tables are refreshed and governed by DLT on the backend. With streaming tables, DLT is only the engine but orchestration is handled by the user either via schedules or external orchestrator Refreshes. 
 -- MAGIC Streaming tables and Materialized Views run on Serverless pipelines under the DLT Serverless SKU: $0.4 /DBU Premium, $0.5 /DBU Enterprise. 
 -- MAGIC This is CHEAPER than just the Serverless SQL warehouses - so it is a huge benefit to have automatically managed streaming tables and materialized views from a price/performance perspective
 -- MAGIC Snowflake charges MORE or SAME for various workload types (such as the 1.5 multiplier just for tasks), this makes ETL on Databricks HUGELY price/performant
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC
+-- MAGIC ### Limitations
+-- MAGIC
+-- MAGIC 1. Cannot easily incrementally read from streaming tables without MVs
+-- MAGIC 2. Cannot CLUSTER STs or MVs -- so even if you want to manually incrementally read it wont be efficient (Why cant you cluster MVs?)
 
 -- COMMAND ----------
 
@@ -106,6 +117,22 @@ SELECT *,
 now() AS processed_watermark
 FROM STREAM main.iot_dashboard.streaming_tables_raw_data
 ;
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Option 1 - Use a materialized VIEW for optimal incremental state management
+CREATE MATERIALIZED VIEW IF NOT EXISTS main.iot_dashboard.mv_silver_staging
+PARTITIONED BY (processed_watermark_date)
+AS 
+SELECT *,
+now() AS processed_watermark,
+now()::date AS processed_watermark_date
+FROM main.iot_dashboard.streaming_tables_raw_data
+;
+
+-- COMMAND ----------
+
+SELECT * FROM main.iot_dashboard.mv_silver_staging
 
 -- COMMAND ----------
 
@@ -182,7 +209,7 @@ SELECT Id::integer,
               value::string,
               processed_watermark,
               ROW_NUMBER() OVER(PARTITION BY device_id, user_id, timestamp ORDER BY timestamp DESC) AS DupRank
-              FROM main.iot_dashboard.streaming_silver_staging
+              FROM main.iot_dashboard.mv_silver_staging --main.iot_dashboard.streaming_silver_staging filter streaming table directly
               WHERE processed_watermark > (SELECT high_watermark FROM main.iot_dashboard.streaming_silver_high_watermark)
               )
               
@@ -207,4 +234,16 @@ REFRESH MATERIALIZED VIEW main.iot_dashboard.streaming_silver_high_watermark
 
 -- COMMAND ----------
 
+-- DBTITLE 1,Show post update new high watermark
+SELECT * FROM main.iot_dashboard.streaming_silver_high_watermark
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Show updated table!
 SELECT * FROM main.iot_dashboard.streaming_silver_sensors
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC
+-- MAGIC ## Which one was more performant? Reading from an MV or an ST?
