@@ -1,7 +1,7 @@
 -- Databricks notebook source
 -- MAGIC %md
 -- MAGIC
--- MAGIC ## This notebook will show a basic ETL design pattern on DBSQL with Streaming Tables
+-- MAGIC ## This notebook will show a basic ETL design pattern on DBSQL with Streaming Tables, Materialized Views, and Hyrbid Strategies
 -- MAGIC
 -- MAGIC 1. Using read_files/read_kafka with Streaming tables for ingestion
 -- MAGIC 2. How to orhcestrate -- refresh schedule or external orchestrator
