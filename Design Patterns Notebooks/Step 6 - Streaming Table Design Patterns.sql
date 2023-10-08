@@ -50,7 +50,6 @@
 -- COMMAND ----------
 
 -- DBTITLE 1,ONLY UNITY CATALOG TABLES ARE SUPPORTED
-
 CREATE DATABASE IF NOT EXISTS main.iot_dashboard;
 USE main.iot_dashboard;
 
@@ -71,7 +70,10 @@ USE main.iot_dashboard;
 -- MAGIC       num_steps::decimal(10,2) AS num_steps, 
 -- MAGIC       timestamp::timestamp AS timestamp,
 -- MAGIC       value  AS value -- This is a JSON object
--- MAGIC   FROM STREAM read_files('dbfs:/databricks-datasets/iot-stream/data-device/');
+-- MAGIC   FROM STREAM read_files('dbfs:/databricks-datasets/iot-stream/data-device/*.json*', 
+-- MAGIC   format => 'json',
+-- MAGIC   maxFilesPerTrigger => 12 -- what does this do when you
+-- MAGIC   );
 -- MAGIC
 
 -- COMMAND ----------
@@ -85,7 +87,15 @@ SELECT COUNT(0) AS DataSourceRowCount FROM main.iot_dashboard.streaming_tables_r
 
 -- COMMAND ----------
 
--- DBTITLE 1,Adding a Refresh schedule
+DESCRIBE HISTORY main.iot_dashboard.streaming_tables_raw_data
+
+-- COMMAND ----------
+
+REFRESH TABLE main.iot_dashboard.streaming_tables_raw_data
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Adding a Refresh schedule - Not for all design patterns
 -- Adds a schedule to refresh the streaming table once a day
 -- at midnight in Los Angeles
 ALTER STREAMING TABLE main.iot_dashboard.streaming_tables_raw_data
@@ -106,12 +116,13 @@ DROP SCHEDULE;
 
 -- COMMAND ----------
 
--- DBTITLE 1,Reading from a streaming table: Option 2 - Incremental reads with Streaming --> Batch Mode
-DROP TABLE IF EXISTS main.iot_dashboard.streaming_silver_staging;
+-- DBTITLE 1,Reading from a streaming table:  Stream --> Batch w Watermarking
+--DROP TABLE IF EXISTS main.iot_dashboard.streaming_silver_staging;
 
 -- You must explicitly drop a streaming table to create it with a different definition
 
 CREATE OR REFRESH STREAMING TABLE main.iot_dashboard.streaming_silver_staging
+TBLPROPERTIES ('pipelines.autoOptimize.zOrderCols'='processed_watermark')
 AS 
 SELECT *,
 now() AS processed_watermark
@@ -120,9 +131,14 @@ FROM STREAM main.iot_dashboard.streaming_tables_raw_data
 
 -- COMMAND ----------
 
--- DBTITLE 1,Option 1 - Use a materialized VIEW for optimal incremental state management
+DESCRIBE DETAIL main.iot_dashboard.streaming_silver_staging
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Option - Use a materialized VIEW for optimal incremental state management
 CREATE MATERIALIZED VIEW IF NOT EXISTS main.iot_dashboard.mv_silver_staging
 PARTITIONED BY (processed_watermark_date)
+TBLPROPERTIES ('pipelines.autoOptimize.zOrderCols'='processed_watermark')
 AS 
 SELECT *,
 now() AS processed_watermark,
@@ -132,7 +148,15 @@ FROM main.iot_dashboard.streaming_tables_raw_data
 
 -- COMMAND ----------
 
+REFRESH MATERIALIZED VIEW main.iot_dashboard.mv_silver_staging
+
+-- COMMAND ----------
+
 SELECT * FROM main.iot_dashboard.mv_silver_staging
+
+-- COMMAND ----------
+
+DESCRIBE HISTORY main.iot_dashboard.streaming_silver_staging
 
 -- COMMAND ----------
 
@@ -178,14 +202,12 @@ PARTITIONED BY (user_id);
 
 -- Option 2 for state tracking - just create an MV with the most recent processed date/timestamp at all times, like a counter. 
 -- This is better if the downstream pipeline is ALWAYS going to run after this and it only needs to most recent processed date
-DROP MATERIALIZED VIEW main.iot_dashboard.streaming_silver_high_watermark;
 
--- Need to explicitly drop MVs to re-create
-
-CREATE MATERIALIZED VIEW main.iot_dashboard.streaming_silver_high_watermark
+-- This should be fast since stats should be collected on this column
+CREATE OR REPLACE VIEW main.iot_dashboard.streaming_silver_high_watermark
 AS
 SELECT COALESCE(MAX(processed_time), '1900-01-01 00:00:00'::timestamp) AS high_watermark
-FROM iot_dashboard.streaming_silver_sensors;
+FROM main.iot_dashboard.streaming_silver_sensors;
 
 -- COMMAND ----------
 
@@ -209,7 +231,7 @@ SELECT Id::integer,
               value::string,
               processed_watermark,
               ROW_NUMBER() OVER(PARTITION BY device_id, user_id, timestamp ORDER BY timestamp DESC) AS DupRank
-              FROM main.iot_dashboard.mv_silver_staging --main.iot_dashboard.streaming_silver_staging filter streaming table directly
+              FROM main.iot_dashboard.streaming_silver_staging --main.iot_dashboard.mv_silver_staging filter streaming table directly
               WHERE processed_watermark > (SELECT high_watermark FROM main.iot_dashboard.streaming_silver_high_watermark)
               )
               
@@ -217,7 +239,8 @@ SELECT Id, device_id, user_id, calories_burnt, miles_walked, num_steps, timestam
 FROM de_dup
 WHERE DupRank = 1
 ) AS source
-ON source.Id = target.Id
+ON --source.processed_time > (SELECT high_watermark FROM main.iot_dashboard.streaming_silver_high_watermark) !! This will be supported once variables are ready
+ source.Id = target.Id
 AND source.user_id = target.user_id
 AND source.device_id = target.device_id
 WHEN MATCHED THEN UPDATE SET 
@@ -226,11 +249,6 @@ WHEN MATCHED THEN UPDATE SET
   target.num_steps = source.num_steps,
   target.timestamp = source.timestamp
 WHEN NOT MATCHED THEN INSERT *;
-
--- COMMAND ----------
-
--- DBTITLE 1,Update the watermark
-REFRESH MATERIALIZED VIEW main.iot_dashboard.streaming_silver_high_watermark
 
 -- COMMAND ----------
 
@@ -247,3 +265,19 @@ SELECT * FROM main.iot_dashboard.streaming_silver_sensors
 -- MAGIC %md
 -- MAGIC
 -- MAGIC ## Which one was more performant? Reading from an MV or an ST?
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Does pruning work for filtering streaming tables?
+SELECT Id::integer,
+              device_id::integer,
+              user_id::integer,
+              calories_burnt::decimal,
+              miles_walked::decimal,
+              num_steps::decimal,
+              timestamp::timestamp,
+              value::string,
+              processed_watermark,
+              ROW_NUMBER() OVER(PARTITION BY device_id, user_id, timestamp ORDER BY timestamp DESC) AS DupRank
+              FROM main.iot_dashboard.streaming_silver_staging --main.iot_dashboard.mv_silver_staging filter streaming table directly
+              WHERE processed_watermark > (SELECT high_watermark FROM main.iot_dashboard.streaming_silver_high_watermark)
