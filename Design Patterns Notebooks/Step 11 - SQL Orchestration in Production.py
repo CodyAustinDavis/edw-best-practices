@@ -4,3 +4,4 @@
 1. SQL Tasks Types
 2. Airflow Operator
 3. DBSQL REST API / Pushdown Client
+4. Single Node Jobs pattern
