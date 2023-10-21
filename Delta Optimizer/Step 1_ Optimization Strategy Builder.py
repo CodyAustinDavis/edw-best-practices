@@ -62,8 +62,7 @@ import os
 
 # COMMAND ----------
 
-# DBTITLE 1,Register and Retrieve DBX Auth Token
-DBX_TOKEN = "<dbx_token>"
+
 
 # COMMAND ----------
 
@@ -81,6 +80,7 @@ dbutils.widgets.dropdown("Catalog Filter Mode", "all", ["all", "include_list", "
 dbutils.widgets.text("Table Filter List (catalog.database.table) (Csv List)", "")
 dbutils.widgets.text("Database Filter List (catalog.database) (Csv List)", "")
 dbutils.widgets.text("Catalog Filter List (Csv List)", "")
+dbutils.widgets.text("Access Token", "")
 
 # COMMAND ----------
 
@@ -97,6 +97,9 @@ table_filter_list = [i.strip() for i in dbutils.widgets.get("Table Filter List (
 database_filter_list = [i.strip() for i in dbutils.widgets.get("Database Filter List (catalog.database) (Csv List)").split(",")]
 catalog_filter_list = [i.strip() for i in dbutils.widgets.get("Catalog Filter List (Csv List)").split(",")]
 database_output = dbutils.widgets.get("Optimizer Output Database:").strip()
+access_token = dbutils.widgets.get("Access Token:")
+
+
 
 if len(dbutils.widgets.get("Optimizer Output Location (optional):").strip()) > 0:
   database_location = dbutils.widgets.get("Optimizer Output Location (optional):").strip()
@@ -105,6 +108,9 @@ else:
 
 
 # COMMAND ----------
+
+# DBTITLE 1,Register and Retrieve DBX Auth Token
+DBX_TOKEN = access_token
 
 # DBTITLE 1,Initialize Core Optimizer Tables
 delta_optimizer = DeltaOptimizer(database_name=database_output, database_location=database_location)
