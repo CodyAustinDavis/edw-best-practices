@@ -77,7 +77,10 @@
 
 # DBTITLE 1,Create Database
 # MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS iot_dashboard_autoloader
+# MAGIC
+# MAGIC CREATE DATABASE IF NOT EXISTS main.iot_dashboard_autoloader;
+# MAGIC USE CATALOG main;
+# MAGIC USE DATABASE iot_dashboard_autoloader;
 # MAGIC --LOCATION 's3a://<path>' or 'adls://<path>'
 
 # COMMAND ----------
@@ -101,7 +104,7 @@ df_raw = (spark
      .readStream
      .format("cloudFiles") ## csv, json, binary, text, parquet, avro
      .option("cloudFiles.format", "json")
-     #.option("cloudFiles.useNotifications", "true")
+     #.option("cloudFiles.useNotifications", "true") ## Sets up Queue
      .option("cloudFiles.schemaLocation", autoloader_schema_location)
      #.option("schema", inputSchema)
      #.option("modifiedAfter", timestampString) ## option
@@ -111,8 +114,7 @@ df_raw = (spark
      .option("ignoreChanges", "true")
      #.option("ignoreDeletes", "true")
      .load(file_source_location)
-     #.select("*", "_metadata") ##_metadata exits with DBR 11.0 + 
-     .withColumn("InputFileName", input_file_name())
+     .select("*", "_metadata") ## Select file metadata
     )
 
 # COMMAND ----------
@@ -133,25 +135,28 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 .format("delta")
 .option("checkpointLocation", checkpoint_location)
 .trigger(availableNow=True) ## once=True, processingTime = '5 minutes', continuous ='1 minute'
-.toTable("iot_dashboard_autoloader.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
+.toTable("main.iot_dashboard_autoloader.bronze_sensors") ## We do not need to define the DDL, it will be created on write, but we can define DDL if we want to
 )
 
 # COMMAND ----------
 
+# DBTITLE 1,Multi-dimensional indexing - ansync or sync
 # MAGIC %sql
 # MAGIC
-# MAGIC OPTIMIZE iot_dashboard_autoloader.bronze_sensors ZORDER BY (time_stamp, tweet_id);
+# MAGIC OPTIMIZE main.iot_dashboard_autoloader.bronze_sensors ZORDER BY (timestamp);
 
 # COMMAND ----------
 
+# DBTITLE 1,Select and Use Delta Table - Any data types
 # MAGIC %sql
 # MAGIC
+# MAGIC -- Select 
 # MAGIC SELECT 
 # MAGIC value,
 # MAGIC value:user_id AS unique_id,
-# MAGIC value:user_idskdjfhsdk AS unique_id,
-# MAGIC value:time_stamp::timestamp AS tweet_ts
-# MAGIC FROM iot_dashboard_autoloader.bronze_sensors
+# MAGIC value:time_stamp::timestamp AS timestamp,
+# MAGIC *
+# MAGIC FROM main.iot_dashboard_autoloader.bronze_sensors
 
 # COMMAND ----------
 
@@ -174,7 +179,7 @@ dbutils.fs.rm(checkpoint_location, recurse=True)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC DESCRIBE HISTORY iot_dashboard_autoloader.bronze_sensors;
+# MAGIC DESCRIBE HISTORY main.iot_dashboard_autoloader.bronze_sensors;
 
 # COMMAND ----------
 
@@ -185,7 +190,7 @@ df_bronze = (
 .option("ignoreChanges", "true") ## .option("ignoreDeletes", "true")
 #.option("useChangeFeed", "true")
 .option("maxFilesPerTrigger", 100) ## Optional - FIFO processing
-.table("iot_dashboard_autoloader.bronze_sensors")
+.table("main.iot_dashboard_autoloader.bronze_sensors")
 )
 
 #display(df_bronze)
@@ -195,8 +200,8 @@ df_bronze = (
 
 # DBTITLE 1,Create Target Silver Table for Merge
 # MAGIC %sql
-# MAGIC CREATE OR REPLACE TABLE iot_dashboard_autoloader.silver_sensors
-# MAGIC AS SELECT * FROM iot_dashboard_autoloader.bronze_sensors WHERE 1=2;
+# MAGIC CREATE OR REPLACE TABLE main.iot_dashboard_autoloader.silver_sensors
+# MAGIC AS SELECT * FROM main.iot_dashboard_autoloader.bronze_sensors WHERE 1=2;
 
 # COMMAND ----------
 
@@ -244,7 +249,7 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
   
   spark.sql("""
   
-  MERGE INTO iot_dashboard.silver_sensors AS target
+  MERGE INTO main.iot_dashboard_autoloader.silver_sensors AS target
   USING (
          SELECT Id::integer,
                 device_id::integer,
@@ -271,11 +276,12 @@ def mergeStatementForMicroBatch(microBatchDf, microBatchId):
     target.miles_walked = source.miles_walked,
     target.num_steps = source.num_steps,
     target.timestamp = source.timestamp
-  WHEN NOT MATCHED THEN INSERT *;
+  WHEN NOT MATCHED THEN INSERT (id, device_id, user_id, calories_burnt, miles_walked, num_steps, timestamp, value)
+  VALUES (source.id, source.device_id, source.user_id, source.calories_burnt, source.miles_walked, source.num_steps, source.timestamp, source.value);
   """)
   
   ## optimize table after the merge for faster queries
-  spark.sql("""OPTIMIZE iot_dashboard_autoloader.silver_sensors ZORDER BY (timestamp, device_id, user_id)""")
+  spark.sql("""OPTIMIZE main.iot_dashboard_autoloader.silver_sensors ZORDER BY (timestamp, device_id, user_id)""")
   
   return
 
@@ -290,7 +296,7 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 (df_bronze
 .writeStream
 .option("checkpointLocation", checkpoint_location_silver)
-.trigger(processingTime='3 seconds') ## processingTime='1 minute' -- Now we can run this merge every minute!
+.trigger(availableNow=True) ## processingTime='1 minute' -- Now we can run this merge every minute!
 .foreachBatch(mergeStatementForMicroBatch)
 .start()
 )
@@ -300,4 +306,73 @@ dbutils.fs.rm(checkpoint_location_silver, recurse=True)
 
 # MAGIC %sql
 # MAGIC
-# MAGIC SELECT * FROM iot_dashboard.silver_sensors;
+# MAGIC SELECT * FROM iot_dashboard_autoloader.silver_sensors;
+
+# COMMAND ----------
+
+# DBTITLE 1,Create a Gold Aggregates
+# MAGIC %sql
+# MAGIC
+# MAGIC
+# MAGIC CREATE OR REPLACE TABLE main.iot_dashboard_autoloader.hourly_summary_statistics
+# MAGIC AS
+# MAGIC SELECT user_id,
+# MAGIC date_trunc('hour', timestamp) AS HourBucket,
+# MAGIC AVG(num_steps)::float AS AvgNumStepsAcrossDevices,
+# MAGIC AVG(calories_burnt)::float AS AvgCaloriesBurnedAcrossDevices,
+# MAGIC AVG(miles_walked)::float AS AvgMilesWalkedAcrossDevices
+# MAGIC FROM main.iot_dashboard.silver_sensors
+# MAGIC GROUP BY user_id,date_trunc('hour', timestamp)
+# MAGIC ORDER BY HourBucket;
+# MAGIC
+# MAGIC
+# MAGIC
+# MAGIC CREATE OR REPLACE TABLE main.iot_dashboard_autoloader.smoothed_hourly_statistics
+# MAGIC AS 
+# MAGIC SELECT *,
+# MAGIC -- Number of Steps
+# MAGIC (avg(`AvgNumStepsAcrossDevices`) OVER (
+# MAGIC         ORDER BY `HourBucket`
+# MAGIC         ROWS BETWEEN
+# MAGIC           4 PRECEDING AND
+# MAGIC           CURRENT ROW
+# MAGIC       )) ::float AS SmoothedNumSteps4HourMA, -- 4 hour moving average
+# MAGIC       
+# MAGIC (avg(`AvgNumStepsAcrossDevices`) OVER (
+# MAGIC         ORDER BY `HourBucket`
+# MAGIC         ROWS BETWEEN
+# MAGIC           24 PRECEDING AND
+# MAGIC           CURRENT ROW
+# MAGIC       ))::float AS SmoothedNumSteps12HourMA --24 hour moving average
+# MAGIC ,
+# MAGIC -- Calories Burned
+# MAGIC (avg(`AvgCaloriesBurnedAcrossDevices`) OVER (
+# MAGIC         ORDER BY `HourBucket`
+# MAGIC         ROWS BETWEEN
+# MAGIC           4 PRECEDING AND
+# MAGIC           CURRENT ROW
+# MAGIC       ))::float AS SmoothedCalsBurned4HourMA, -- 4 hour moving average
+# MAGIC       
+# MAGIC (avg(`AvgCaloriesBurnedAcrossDevices`) OVER (
+# MAGIC         ORDER BY `HourBucket`
+# MAGIC         ROWS BETWEEN
+# MAGIC           24 PRECEDING AND
+# MAGIC           CURRENT ROW
+# MAGIC       ))::float AS SmoothedCalsBurned12HourMA --24 hour moving average,
+# MAGIC ,
+# MAGIC -- Miles Walked
+# MAGIC (avg(`AvgMilesWalkedAcrossDevices`) OVER (
+# MAGIC         ORDER BY `HourBucket`
+# MAGIC         ROWS BETWEEN
+# MAGIC           4 PRECEDING AND
+# MAGIC           CURRENT ROW
+# MAGIC       ))::float AS SmoothedMilesWalked4HourMA, -- 4 hour moving average
+# MAGIC       
+# MAGIC (avg(`AvgMilesWalkedAcrossDevices`) OVER (
+# MAGIC         ORDER BY `HourBucket`
+# MAGIC         ROWS BETWEEN
+# MAGIC           24 PRECEDING AND
+# MAGIC           CURRENT ROW
+# MAGIC       ))::float AS SmoothedMilesWalked12HourMA --24 hour moving average
+# MAGIC FROM main.iot_dashboard.hourly_summary_statistics
+# MAGIC ;
