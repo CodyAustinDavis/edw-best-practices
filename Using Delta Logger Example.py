@@ -77,12 +77,14 @@ from helperfunctions.deltalogger import DeltaLogger
 
 # COMMAND ----------
 
-delta_logger = DeltaLogger(logger_table_name="main.iot_dashboard_logger.delta_logger", process_name='iot_dashboard_pipeline')
+delta_logger = DeltaLogger(logger_table_name="main.iot_dashboard_logger.delta_logger", process_name='iot_dashboard_pipeline_new')
 
 # COMMAND ----------
 
 # DBTITLE 1,Watermarking Example Baked into Logger with Process Run Start Times
 watermark_ts = delta_logger.get_most_recent_success_run_start_time()
+
+print(watermark_ts)
 
 # COMMAND ----------
 
@@ -103,10 +105,3 @@ print(delta_logger.active_run_metadata)
 # DBTITLE 1,Complete and Fail Active Runs
 delta_logger.complete_run()
 #delta_logger.fail_run()
-
-# COMMAND ----------
-
-# DBTITLE 1,Review the Table
-# MAGIC %sql
-# MAGIC
-# MAGIC SELECT * FROM main.iot_dashboard_logger.delta_logger

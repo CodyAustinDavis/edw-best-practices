@@ -355,10 +355,15 @@ class DeltaLogger():
         sql_query += f" AND status = '{status}'"
 
     try: 
-      new_active_run_id = int(self.spark.sql(sql_query).collect()[0][0])
+
+      try:
+        new_active_run_id = int(self.spark.sql(sql_query).collect()[0][0])
+
+      except:
+        new_active_run_id = -1
 
     except Exception as e:
-      print(f"FAIL: Unable to get status of most recent run id for process: {process_name} with error: \n {str(e)}")
+      print(f"FAIL: Unable to get status of most recent run id for process {process_name} with error: \n {str(e)}")
       raise(e)
 
     return new_active_run_id
@@ -371,7 +376,12 @@ class DeltaLogger():
 
     try:
       most_recent_run_id = self.get_most_recent_run_id(process_name=process_name, status="SUCCESS")
-      latest_success_start_timetamp = self.get_start_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
+
+      if most_recent_run_id == -1:
+        return "1900-01-01 00:00:00.000"
+      
+      else: 
+        latest_success_start_timetamp = self.get_start_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
 
     except Exception as e:
       print(f"FAIL: Unable to get success start time of most recent run for process: {process_name} with error: \n {str(e)}")
@@ -385,7 +395,12 @@ class DeltaLogger():
 
     try:
       most_recent_run_id = self.get_most_recent_run_id(process_name=process_name, status="SUCCESS")
-      latest_success_end_timetamp = self.get_end_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
+
+      if most_recent_run_id == -1:
+        return "1900-01-01 00:00:00.000"
+      
+      else:
+        latest_success_end_timetamp = self.get_end_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
 
     except Exception as e:
       print(f"FAIL: Unable to get success end time of most recent run for process: {process_name} with error: \n {str(e)}")
@@ -399,7 +414,12 @@ class DeltaLogger():
 
     try:
       most_recent_run_id = self.get_most_recent_run_id(process_name=process_name, status="FAIL")
-      latest_success_start_timetamp = self.get_start_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
+      
+      if most_recent_run_id == -1:
+        return "1900-01-01 00:00:00.000"
+      
+      else:
+        latest_success_start_timetamp = self.get_start_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
 
     except Exception as e:
       print(f"FAIL: Unable to get failed start time of most recent run for process: {process_name} with error: \n {str(e)}")
@@ -413,7 +433,12 @@ class DeltaLogger():
 
     try:
       most_recent_run_id = self.get_most_recent_run_id(process_name=process_name, status="FAIL")
-      latest_success_end_timetamp = self.get_end_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
+
+      if most_recent_run_id == -1:
+        return "1900-01-01 00:00:00.000"
+      
+      else:
+        latest_success_end_timetamp = self.get_end_time_for_run_id(run_id=most_recent_run_id, process_name=process_name)
 
     except Exception as e:
       print(f"FAIL: Unable to get failed end time of most recent run for process: {process_name} with error: \n {str(e)}")
