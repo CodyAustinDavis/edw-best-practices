@@ -41,8 +41,16 @@
 # DBTITLE 1,Available Libraries for Procedural Management
 from helperfunctions.deltalogger import DeltaLogger
 from helperfunctions.dbsqlclient import ServerlessClient
-from helperfunctions.dbsqltransactions import DBSQLTransactionManager
-from helperfunctions.deltahelpers import DeltaHelpers, DeltaMergeHelpers
+from helperfunctions.dbsqltransactions import DBSQLTransactionManager ## For 
+from helperfunctions.deltahelpers import DeltaHelpers, DeltaMergeHelpers ## For Temp Tables and Concurrent Merge statements
+
+# COMMAND ----------
+
+# DBTITLE 1,Scope Session
+# MAGIC %sql
+# MAGIC CREATE DATABASE IF NOT EXISTS main.iot_dashboard;
+# MAGIC USE CATALOG main;
+# MAGIC USE SCHEMA iot_dashboard;
 
 # COMMAND ----------
 
@@ -61,14 +69,6 @@ delta_logger = DeltaLogger(logger_table_name=LOGGER_TABLE, process_name=PIPELINE
 
 ## Optionally create transaction manager for multi statement transaction requirements (like SCD2 upserts)
 serverless_transaction_manager = DBSQLTransactionManager(warehouse_id=WAREHOUSE_ID, host_name=HOST_NAME)
-
-# COMMAND ----------
-
-# DBTITLE 1,Scope Session
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS main.iot_dashboard;
-# MAGIC USE CATALOG main;
-# MAGIC USE SCHEMA iot_dashboard;
 
 # COMMAND ----------
 
@@ -313,3 +313,17 @@ except Exception as e:
 
 # DBTITLE 1,Complete Run!
 delta_logger.complete_run()
+
+# COMMAND ----------
+
+delta_logger.full_table_name
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC
+# MAGIC SELECT * FROM main.iot_dashboard.logger
+
+# COMMAND ----------
+
+{"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}, {"status": "SUCCESS", "event_timestamp": "2023-10-29 21:49:50.975403"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:46:04.728005", "msg": "Failed to MERGE with error"}}]}, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:46:04.728005", "msg": "Failed to MERGE with error"}}]}, {"log_level": "INFO", "log_data": {"event_ts": "2023-10-29 21:48:22.596424", "msg": "couldnt find table, was already deleted"}}]}]}

@@ -674,16 +674,13 @@ class DeltaLogger():
 
     run_metadata = {"log_level": log_level, "log_data": {"event_ts": log_ts, "msg": msg}}
     
-    current_run_metadata["metadata"].append(run_metadata)
-
-    metadata = current_run_metadata
 
     try: 
 
       if msg is not None:
 
-        self._update_run_id(process_name=process_name, run_id=run_id, run_metadata=metadata)
-        print(f"{log_level} - {log_ts} for {run_id} in process {process_name}. MSG: {metadata}")
+        self._update_run_id(process_name=process_name, run_id=run_id, run_metadata=run_metadata)
+        print(f"{log_level} - {log_ts} for {run_id} in process {process_name}. MSG: {run_metadata}")
         
       else:
         print("No msg to log for run. Skipping. ")
