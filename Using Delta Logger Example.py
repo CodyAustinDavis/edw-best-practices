@@ -37,6 +37,7 @@
 # MAGIC - <b> start_run(process_name: Optional, msg: Optional) </b>
 # MAGIC - <b> fail_run(process_name: Optional, msg: Optional) </b>
 # MAGIC - <b> complete_run(process_name: Optional, msg: Optional) </b>
+# MAGIC - <b> log_run_info(log_level = 'INFO', msg = None) </b>
 # MAGIC - <b> get_last_successful_run_id(proces_name: Optional)</b> -- If no previous successful run, return -1
 # MAGIC - <b> get_last_successful_run_timestamp(process_name: Optional)</b> -- If no previous successful run for the process, defaults to "1900-01-01 00:00:00"
 # MAGIC - <b> get_last_run_id(process_name: Optional)</b> -- Get last run id regardless of status, if none return -1
@@ -99,6 +100,15 @@ print(delta_logger.active_run_end_ts)
 print(delta_logger.active_run_start_ts)
 print(delta_logger.active_run_status)
 print(delta_logger.active_run_metadata)
+
+# COMMAND ----------
+
+# DBTITLE 1,Log Run Info/Messages
+delta_logger.log_run_info(log_level='INFO', msg = "This step did some weird stuff")
+
+# COMMAND ----------
+
+delta_logger.log_run_info(log_level='WARN', msg = "This step did some weird stuff")
 
 # COMMAND ----------
 

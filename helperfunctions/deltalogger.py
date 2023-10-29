@@ -76,7 +76,7 @@ class DeltaLogger():
       self.spark.sql(final_sql)
 
       ## Optimize table as well on initilization
-      self.spark.sql(f"OPTIMIZE {self.full_table_name} ZORDER BY (end_timestamp, start_timestamp, run_id);")
+      self.spark.sql(f"OPTIMIZE {self.full_table_name} ZORDER BY (run_id, start_timestamp);")
       
       print(f"SUCCESS: Delta Logger Successfully Initialized:\n Table Name: {self.full_table_name}")
     
@@ -169,6 +169,10 @@ class DeltaLogger():
       """
       ## Create run
       self.spark.sql(run_sql)
+
+      ## Optimize Process section
+      self.spark.sql(f"""OPTIMIZE {self.full_table_name} WHERE process_name = '{process_name}' ZORDER BY (run_id, start_timestamp);""")
+      
       
 
     except Exception as e:
@@ -191,7 +195,7 @@ class DeltaLogger():
           process_name = '{process_name}'
           AND start_timestamp = '{start_ts}'
           AND status = 'RUNNING'
-          ORDER BY end_timestamp DESC, start_timestamp DESC
+          ORDER BY run_id DESC
           LIMIT 1
               """).collect()[0]]
       
@@ -604,6 +608,10 @@ class DeltaLogger():
       self.active_run_start_ts = None
       self.active_run_status = None
 
+      ## Optimize Process section
+      self.spark.sql(f"""OPTIMIZE {self.full_table_name} WHERE process_name = '{process_name}' ZORDER BY (run_id, start_timestamp);""")
+      
+
       print(f"COMPLETED RUN {run_id} for process {process_name} at {end_ts}!")
 
     except Exception as e:
@@ -633,10 +641,57 @@ class DeltaLogger():
       self.active_run_start_ts = None
       self.active_run_status = None
 
+      ## Optimize Process section
+      self.spark.sql(f"""OPTIMIZE {self.full_table_name} WHERE process_name = '{process_name}' ZORDER BY (run_id, start_timestamp);""")
+      
+
       print(f"FAILED RUN {run_id} for process {process_name} at {end_ts}!")
 
     except Exception as e:
       print(f"FAIL to mark run FAIL for run_id {run_id} in process {process_name} with error: {str(e)}")
       raise(e)
 
+    return
+  
+
+  ## Add logging events to active runs
+  ## Commit immediately = True will update the delta table record synchronously, False will store update in the instance and commit on complete/fail
+  ## Options for level INFO/WARN/DEBUG/CRITICAL
+  def log_run_info(self, log_level:str ="INFO", msg:str = None, process_name=None, run_id=None):
+
+    if log_level not in ["DEBUG", "INFO", "WARN", "CRITICAL"]:
+      raise(ValueError("log_level must be one of the following values: DEBUG/INFO/WARN/CRITICAL"))
+    
+
+    process_name = self.resolve_process_name(process_name)
+    run_id = self.resolve_run_id(run_id)
+
+    ts = datetime.now()
+    log_ts = ts.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+
+    current_run_metadata = self.get_metadata_for_run_id(run_id)
+
+    run_metadata = {"log_level": log_level, "log_data": {"event_ts": log_ts, "msg": msg}}
+    
+    current_run_metadata["metadata"].append(run_metadata)
+
+    metadata = current_run_metadata
+
+    try: 
+
+      if msg is not None:
+
+        self._update_run_id(process_name=process_name, run_id=run_id, run_metadata=metadata)
+        print(f"{log_level} - {log_ts} for {run_id} in process {process_name}. MSG: {metadata}")
+        
+      else:
+        print("No msg to log for run. Skipping. ")
+
+
+
+    except Exception as e:
+      print(f"FAILED to log event for run_id {run_id} and process_name {process_name} with error: {str(e)}")
+      raise(e)
+    
     return
