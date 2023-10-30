@@ -155,6 +155,8 @@ try:
 
   serverless_client.sql(copy_into_sql)
 
+  delta_logger.log_run_info(msg = 'COPY INTO complete')
+
 except Exception as e:
 
   delta_logger.log_run_info(log_level='CRITICAL', msg='Failed to COPY INTO with error')
@@ -227,6 +229,8 @@ try:
 
   serverless_transaction_manager.execute_dbsql_transaction(mst_scd_transaction_sql, tables_to_manage=["main.iot_dashboard.silver_sensors_scd_2"])
 
+  delta_logger.log_run_info(msg='SCD 2 MERGE Complete')
+  
 except Exception as e:
 
   delta_logger.log_run_info(log_level='CRITICAL', msg='Failed to MERGE with error')
@@ -243,6 +247,7 @@ except Exception as e:
 try: 
 
   serverless_client.sql("TRUNCATE TABLE main.iot_dashboard.temp_batch_to_insert")
+  delta_logger.log_run_info(msg='Batch cleared!')
 
 except Exception as e:
 
@@ -253,6 +258,8 @@ except Exception as e:
 try: 
 
   serverless_client.sql("OPTIMIZE main.iot_dashboard.silver_sensors_scd_2 ZORDER BY (timestamp, device_id)")
+  
+  delta_logger.log_run_info(msg='Target tables optimized!')
 
 except Exception as e:
 
@@ -303,6 +310,8 @@ try:
 
   serverless_client.submit_multiple_sql_commands(gold_views_sql)
 
+  delta_logger.log_run_info(msg='Operational View Created!')
+
 except Exception as e:
 
   delta_logger.log_run_info(log_level='CRITICAL', msg='couldnt find table, all should exist')
@@ -322,8 +331,6 @@ delta_logger.full_table_name
 
 # MAGIC %sql
 # MAGIC
-# MAGIC SELECT * FROM main.iot_dashboard.logger
-
-# COMMAND ----------
-
-{"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}, {"status": "SUCCESS", "event_timestamp": "2023-10-29 21:49:50.975403"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:46:04.728005", "msg": "Failed to MERGE with error"}}]}, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"status_changes": [{"status": "CREATED", "event_timestamp": "2023-10-29 21:44:32.256598"}], "metadata": [null, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:45:19.942345", "msg": "Failed to MERGE with error"}}]}, {"log_level": "CRITICAL", "log_data": {"event_ts": "2023-10-29 21:46:04.728005", "msg": "Failed to MERGE with error"}}]}, {"log_level": "INFO", "log_data": {"event_ts": "2023-10-29 21:48:22.596424", "msg": "couldnt find table, was already deleted"}}]}]}
+# MAGIC SELECT *
+# MAGIC  FROM main.iot_dashboard.logger 
+# MAGIC ORDER BY run_id DESC
