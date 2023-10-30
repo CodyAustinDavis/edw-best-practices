@@ -234,22 +234,16 @@ source._batch_run_id --example batch run id
 )
 ;
 
-
-
--- If succeeds remove temp table
-TRUNCATE TABLE iot_dashboard.temp_batch_to_insert;
-
 -- This calculate table stats for all columns to ensure the optimizer can build the best plan
 -- THIS IS NOT INCREMENTAL
 ANALYZE TABLE iot_dashboard.silver_sensors_scd_2 COMPUTE STATISTICS FOR ALL COLUMNS;
 
-
+-- THIS IS INCREMENTAL
 OPTIMIZE iot_dashboard.silver_sensors_scd_2 ZORDER BY (timestamp, device_id);
 
-
 -- Truncate bronze batch once successfully loaded
-
--- This is the classical batch design pattern - but we can also now use streaming tables
+-- If succeeds remove temp table
+TRUNCATE TABLE iot_dashboard.temp_batch_to_insert;
 
 -- COMMAND ----------
 
