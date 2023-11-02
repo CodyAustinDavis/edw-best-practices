@@ -44,6 +44,7 @@ class QueryFailException(Exception):
 class ServerlessClient():
 
   def __init__(self, warehouse_id: str, token: str = None, session_catalog: str = None, session_schema:str = None, host_name: str = None, verbose : bool = False):
+    
     from pyspark.dbutils import DBUtils
     ## Assume running in a spark environment, use same session as caller
     ## Defaults to same workspace that the client is in, but can manually override by passing in host_name 
