@@ -38,18 +38,6 @@
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC
-# MAGIC ## Add option to manually pass in run_id for a process, not primary key
-# MAGIC ## Add batch_id column / run_id - test renaming to row_number()
-# MAGIC ## Add durations in seconds (ms) for runs/attempts
-# MAGIC ## Add more generic info on run info like rows affected, etc. 
-# MAGIC ## Add Notebook name
-# MAGIC ## Want to clean all data for a paritition
-# MAGIC ## Add Ability for adding run metadata json in single command
-
-# COMMAND ----------
-
 # DBTITLE 1,Available Libraries for Procedural Management
 from helperfunctions.deltalogger import DeltaLogger ## Easy logging OOTB
 from helperfunctions.dbsqlclient import ServerlessClient ## Push Statement down to DBSQL from anyhere spark.sql() ==> serverless_client.sql()
@@ -77,15 +65,21 @@ PIPELINE_PROCESS_NAME = 'iot_dashboard_scd2_end_to_end'
 serverless_client = ServerlessClient(warehouse_id=WAREHOUSE_ID, host_name=HOST_NAME) #token=TOKEN
 
 ## Create Delta Logger
-delta_logger = DeltaLogger(logger_table_name=LOGGER_TABLE, session_process_name=PIPELINE_PROCESS_NAME)
+delta_logger = DeltaLogger(logger_table_name=LOGGER_TABLE, session_process_name=PIPELINE_PROCESS_NAME) # partition_cols=['start_date'], session_batch_id="12309821345"
 
 ## Optionally create transaction manager for multi statement transaction requirements (like SCD2 upserts)
 serverless_transaction_manager = DBSQLTransactionManager(warehouse_id=WAREHOUSE_ID, host_name=HOST_NAME)
 
 # COMMAND ----------
 
+print(delta_logger.active_process_name)
+print(delta_logger.active_run_id)
+print(delta_logger.active_batch_id)
+
+# COMMAND ----------
+
 # DBTITLE 1,Start Run with Delta Logger
-delta_logger.start_run()
+delta_logger.start_run(process_name='copy_into_command', batch_id="custom_batch_id")
 
 # COMMAND ----------
 

@@ -102,8 +102,10 @@ delta_logger = DeltaLogger(logger_table_name="main.iot_dashboard.logger")
 
 # DBTITLE 1,Start A Run
 ## process_name - Optional additionl / sub process name within session. By default process_name is the same as the session process name
+## batch_id - Optional Batch Id
 
 delta_logger.start_run()
+
 
 # COMMAND ----------
 
@@ -121,7 +123,7 @@ print(delta_logger.active_run_metadata)
 # DBTITLE 1,Log a Custom Named Metrics to Reference in Queries
 ## Seems to cancel out metrics when a manual process id is defined
 
-delta_logger.log_run_metric(run_metrics_dict={"Rows_Affected": 100001, "Percent_Success": 1})
+delta_logger.log_run_metric(run_metrics_dict={"Rows_Affected": 10000, "Percent_Success": 1})
 
 # COMMAND ----------
 
@@ -158,13 +160,14 @@ delta_logger.complete_run()
 ## This starts a run with this sub-process and registers the process_name as the active process
 delta_logger.start_run(process_name='MERGE STEP')
 
+
 # COMMAND ----------
 
 delta_logger.log_run_metric(run_metrics_dict={"Rows_Affected": 40124, "Percent_Success": 0.5})
 
 # COMMAND ----------
 
-delta_logger.complete_run()
+delta_logger.complete_run(process_name='MERGE STEP')
 
 # COMMAND ----------
 
@@ -190,7 +193,7 @@ delta_logger.complete_run()
 # MAGIC session_process_name,
 # MAGIC process_name,
 # MAGIC date_trunc('HOUR', start_timestamp) AS EventHour,
-# MAGIC AVG(run_metadata:Rows_Affected) AS AvgRowsProcessed
+# MAGIC AVG(run_metadata:Rows_Affected) AS AvgRowsProcessed -- We can use our custom metrics in SQL Queries and Dashboards
 # MAGIC FROM main.iot_dashboard.logger
 # MAGIC GROUP BY
 # MAGIC session_process_name,
